@@ -18,7 +18,9 @@ WORKDIR /app
 
 # Set build environment
 ARG MIX_ENV
+ARG WEB_BASE_URL=http://localhost:4000
 ENV MIX_ENV=${MIX_ENV}
+ENV WEB_BASE_URL=${WEB_BASE_URL}
 
 # Install hex and rebar
 RUN mix local.hex --force && \

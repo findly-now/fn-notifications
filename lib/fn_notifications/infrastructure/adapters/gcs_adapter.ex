@@ -31,12 +31,16 @@ defmodule FnNotifications.Infrastructure.Adapters.GcsAdapter do
     {:ok, String.t()} | {:error, String.t()}
   def upload_file(object_name, content, opts \\ [])
 
-  def upload_file(_object_name, _content, _opts) when not is_configured() do
-    Logger.warning("GCS not configured, skipping file upload")
-    {:error, "GCS not configured"}
+  def upload_file(object_name, content, opts) when is_binary(object_name) and is_binary(content) do
+    if not is_configured() do
+      Logger.warning("GCS not configured, skipping file upload")
+      {:error, "GCS not configured"}
+    else
+      do_upload_file(object_name, content, opts)
+    end
   end
 
-  def upload_file(object_name, content, opts) do
+  defp do_upload_file(object_name, content, opts) do
     with {:ok, conn} <- get_connection(),
          {:ok, bucket} <- get_bucket(),
          upload_opts <- build_upload_options(opts),
@@ -60,12 +64,16 @@ defmodule FnNotifications.Infrastructure.Adapters.GcsAdapter do
       {:ok, "<html>...</html>"}
   """
   @spec download_file(String.t()) :: {:ok, binary()} | {:error, String.t()}
-  def download_file(object_name) when not is_configured() do
-    Logger.warning("GCS not configured, skipping file download")
-    {:error, "GCS not configured"}
+  def download_file(object_name) do
+    if not is_configured() do
+      Logger.warning("GCS not configured, skipping file download")
+      {:error, "GCS not configured"}
+    else
+      do_download_file(object_name)
+    end
   end
 
-  def download_file(object_name) do
+  defp do_download_file(object_name) do
     with {:ok, conn} <- get_connection(),
          {:ok, bucket} <- get_bucket(),
          {:ok, response} <- perform_download(conn, bucket, object_name) do
@@ -82,12 +90,16 @@ defmodule FnNotifications.Infrastructure.Adapters.GcsAdapter do
   Delete a file from Google Cloud Storage.
   """
   @spec delete_file(String.t()) :: :ok | {:error, String.t()}
-  def delete_file(object_name) when not is_configured() do
-    Logger.warning("GCS not configured, skipping file deletion")
-    {:error, "GCS not configured"}
+  def delete_file(object_name) do
+    if not is_configured() do
+      Logger.warning("GCS not configured, skipping file deletion")
+      {:error, "GCS not configured"}
+    else
+      do_delete_file(object_name)
+    end
   end
 
-  def delete_file(object_name) do
+  defp do_delete_file(object_name) do
     with {:ok, conn} <- get_connection(),
          {:ok, bucket} <- get_bucket(),
          {:ok, _response} <- perform_delete(conn, bucket, object_name) do
@@ -104,12 +116,16 @@ defmodule FnNotifications.Infrastructure.Adapters.GcsAdapter do
   Generate a signed URL for temporary access to a private object.
   """
   @spec generate_signed_url(String.t(), pos_integer()) :: {:ok, String.t()} | {:error, String.t()}
-  def generate_signed_url(object_name, expires_in_seconds \\ 3600) when not is_configured() do
-    Logger.warning("GCS not configured, cannot generate signed URL")
-    {:error, "GCS not configured"}
+  def generate_signed_url(object_name, expires_in_seconds \\ 3600) do
+    if not is_configured() do
+      Logger.warning("GCS not configured, cannot generate signed URL")
+      {:error, "GCS not configured"}
+    else
+      do_generate_signed_url(object_name, expires_in_seconds)
+    end
   end
 
-  def generate_signed_url(object_name, expires_in_seconds) do
+  defp do_generate_signed_url(object_name, expires_in_seconds) do
     # Implementation would use Google Cloud Storage signed URL generation
     # For now, return a placeholder implementation
     Logger.info("Generating signed URL for GCS object", object: object_name, expires_in: expires_in_seconds)
