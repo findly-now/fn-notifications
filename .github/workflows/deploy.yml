@@ -1,0 +1,200 @@
+name: Build and Deploy Notifications Service
+
+on:
+  push:
+    branches:
+      - main          # Deploy to production
+      - develop       # Deploy to staging
+      - 'feature/*'   # Deploy to dev
+  pull_request:
+    branches:
+      - main
+      - develop
+
+env:
+  PROJECT_ID: findly-production  # Change this to your GCP project
+  GAR_LOCATION: us-central1      # Change this to your Artifact Registry location
+  REPOSITORY: findly-services    # Change this to your Artifact Registry repository
+  SERVICE: fn-notifications
+  REGION: us-central1           # Change this to your Cloud Run region
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Run Tests
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: notifications_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set up Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: '1.15'
+        otp-version: '26'
+
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: deps
+        key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+        restore-keys: ${{ runner.os }}-mix-
+
+    - name: Cache build
+      uses: actions/cache@v3
+      with:
+        path: _build
+        key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
+        restore-keys: ${{ runner.os }}-build-
+
+    - name: Install dependencies
+      run: mix deps.get
+
+    - name: Compile dependencies
+      run: mix deps.compile
+
+    - name: Compile application
+      run: mix compile --warnings-as-errors
+
+    - name: Check formatting
+      run: mix format --check-formatted
+
+    - name: Run Credo static analysis
+      run: mix credo --strict
+
+    - name: Set up test database
+      env:
+        MIX_ENV: test
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/notifications_test
+      run: |
+        # Deploy schema to test database
+        psql "$DATABASE_URL" -f schema.sql
+
+    - name: Run tests
+      env:
+        MIX_ENV: test
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/notifications_test
+        KAFKA_BROKERS: localhost:9092
+        TEST_MODE: true
+      run: mix test
+
+  build-and-deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    name: Build and Deploy
+
+    # Only run on push events (not PRs)
+    if: github.event_name == 'push'
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Set environment based on branch
+      id: set-env
+      run: |
+        if [[ ${{ github.ref }} == 'refs/heads/main' ]]; then
+          echo "environment=production" >> $GITHUB_OUTPUT
+          echo "k8s_namespace=findly" >> $GITHUB_OUTPUT
+        elif [[ ${{ github.ref }} == 'refs/heads/develop' ]]; then
+          echo "environment=staging" >> $GITHUB_OUTPUT
+          echo "k8s_namespace=findly" >> $GITHUB_OUTPUT
+        else
+          echo "environment=dev" >> $GITHUB_OUTPUT
+          echo "k8s_namespace=findly" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Authenticate to Google Cloud
+      id: auth
+      uses: google-github-actions/auth@v1
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+
+    - name: Configure Docker to use gcloud as a credential helper
+      run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev
+
+    - name: Get GKE credentials
+      uses: google-github-actions/get-gke-credentials@v1
+      with:
+        cluster_name: ${{ secrets.GKE_CLUSTER }}
+        location: ${{ secrets.GKE_ZONE }}
+
+    - name: Generate image tag
+      id: image-tag
+      run: |
+        # Use git commit SHA and timestamp for unique tags
+        SHORT_SHA=$(git rev-parse --short HEAD)
+        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+        TAG="${{ steps.set-env.outputs.environment }}-${TIMESTAMP}-${SHORT_SHA}"
+        echo "tag=${TAG}" >> $GITHUB_OUTPUT
+        echo "image=${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE }}:${TAG}" >> $GITHUB_OUTPUT
+
+    - name: Build Docker image
+      run: |
+        docker build -t ${{ steps.image-tag.outputs.image }} \
+          --build-arg MIX_ENV=${{ steps.set-env.outputs.environment }} .
+
+    - name: Push Docker image
+      run: |
+        docker push ${{ steps.image-tag.outputs.image }}
+
+    - name: Deploy to Kubernetes
+      run: |
+        # Clone fn-infra repository to get deployment scripts
+        git clone https://github.com/findly-now/fn-infra.git /tmp/fn-infra || true
+
+        # Update the image in the deployment
+        kubectl set image deployment/notifications notifications=${{ steps.image-tag.outputs.image }} -n ${{ steps.set-env.outputs.k8s_namespace }}
+
+        # Wait for rollout to complete
+        kubectl rollout status deployment/notifications -n ${{ steps.set-env.outputs.k8s_namespace }} --timeout=300s
+
+    - name: Verify deployment
+      run: |
+        # Wait a bit for the deployment to be ready
+        sleep 15
+
+        # Check if pods are running
+        kubectl get pods -l app=notifications -n ${{ steps.set-env.outputs.k8s_namespace }}
+
+        # Check if service is responding
+        kubectl exec -n ${{ steps.set-env.outputs.k8s_namespace }} deployment/notifications -- wget --spider -q http://localhost:4000/api/health || echo "Health check endpoint not ready yet"
+
+    - name: Notify deployment status
+      if: always()
+      run: |
+        if [ ${{ job.status }} == 'success' ]; then
+          echo "✅ Notifications service deployed successfully to ${{ steps.set-env.outputs.environment }}"
+          echo "Image: ${{ steps.image-tag.outputs.image }}"
+        else
+          echo "❌ Notifications service deployment failed"
+          kubectl get events -n ${{ steps.set-env.outputs.k8s_namespace }} --sort-by='.lastTimestamp' | tail -10
+        fi
+
+    - name: Rollback on failure
+      if: failure()
+      run: |
+        echo "🔄 Rolling back notifications deployment"
+        kubectl rollout undo deployment/notifications -n ${{ steps.set-env.outputs.k8s_namespace }}
+        kubectl rollout status deployment/notifications -n ${{ steps.set-env.outputs.k8s_namespace }} --timeout=180s

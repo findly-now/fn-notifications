@@ -7,6 +7,7 @@ defmodule FnNotifications.Domain.Entities.Notification do
     NotificationChannel,
     NotificationStatus
   }
+  alias UUID
 
   @type t :: %__MODULE__{
           id: String.t(),

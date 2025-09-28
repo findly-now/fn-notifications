@@ -1,65 +1,38 @@
-# FN Notifications Service
+# fn-notifications
 
-> **Enterprise notification microservice for Lost & Found platforms**
+**Enterprise notification microservice for Lost & Found platforms**
 
-Multi-channel notification delivery system enabling rapid reunification of lost items through intelligent, timely notifications.
+## Purpose
 
-## 🎯 Domain Vision
+Multi-channel notification delivery system enabling rapid reunification through intelligent, timely notifications across Email, SMS, and WhatsApp.
 
-This microservice operates within the **Lost & Found ecosystem**, enabling rapid reunification of lost items through intelligent notifications. The system processes lifecycle events (`post.created`, `post.matched`, `post.claimed`, `post.resolved`) and delivers contextual notifications via multiple channels to accelerate the connection between item reporters and finders.
+**Technology**: Elixir/OTP + Phoenix + Kafka + PostgreSQL + Twilio
 
-**Core Business Value**: Reduce the time between item loss and recovery through timely, relevant notifications that guide users through the reunification process.
-
-## 🏗️ Domain Objects
-
-Explore the domain model:
-
-- **Entities**: [`Notification`](lib/fn_notifications/domain/entities/notification.ex), [`UserPreferences`](lib/fn_notifications/domain/entities/user_preferences.ex)
-- **Aggregates**: [`NotificationAggregate`](lib/fn_notifications/domain/aggregates/notification_aggregate.ex)
-- **Value Objects**: [`NotificationChannel`](lib/fn_notifications/domain/value_objects/notification_channel.ex), [`NotificationStatus`](lib/fn_notifications/domain/value_objects/notification_status.ex)
-- **Repositories**: [`NotificationRepositoryBehavior`](lib/fn_notifications/domain/repositories/notification_repository_behavior.ex), [`UserPreferencesRepositoryBehavior`](lib/fn_notifications/domain/repositories/user_preferences_repository_behavior.ex)
-
-## 📚 Architecture & Product Vision
-
-For comprehensive documentation on architecture decisions, product vision, and system design:
-
-**📖 [fn-docs Repository](https://github.com/your-org/fn-docs)**
-
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
-# Clone and setup
-git clone <repository-url>
-cd fn-notifications
+# 1. Setup environment
+cp .env.example .env
+# Edit .env with your cloud credentials (see fn-docs/CLOUD-SETUP.md)
 
-# One-command setup
-make setup
+# 2. Start service
+make setup && make up
 
-# Start services
-make up
-
-# Verify everything works
+# 3. Test
 curl http://localhost:4000/api/health
+make test
 ```
 
 **Dashboard**: http://localhost:4000
 
-## 🛠️ Core Features
+## Core Features
 
-- **Multi-channel delivery**: Email, SMS, WhatsApp notifications
-- **Event-driven processing**: Real-time Confluent Cloud Kafka event handling via Broadway
+- **Multi-channel delivery**: Email, SMS, WhatsApp
+- **Event-driven**: Real-time Kafka processing via Broadway
 - **Enterprise resilience**: Circuit breakers, bulkheads, retry mechanisms
-- **User preference management**: Granular notification controls per channel
-- **Real-time dashboard**: Phoenix LiveView with live updates
+- **User preferences**: Granular notification controls per channel
 
-## 📦 Tech Stack
+## Documentation
 
-**Elixir/OTP** • **Phoenix** • **Confluent Cloud Kafka** • **Cloud PostgreSQL** • **Google Cloud Storage** • **Docker**
-
-## 🧞 AI Assistant
-
-For AI-assisted development, see **[CLAUDE.md](CLAUDE.md)** - specialized guidance for Claude Code.
-
-## 📄 License
-
-MIT License - see [LICENSE.md](LICENSE.md)
+- **[DEVELOPMENT.md](./DEVELOPMENT.md)** - Complete development guide
+- **[../fn-docs/](../fn-docs/)** - Architecture and standards

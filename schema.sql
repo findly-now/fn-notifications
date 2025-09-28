@@ -231,12 +231,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS oban_jobs_unique_scheduled_index ON oban_jobs 
 
 
 -- Sample user preferences with contact information
--- Sample user preferences with real contact information for testing
--- WARNING: These are real email/phone formats - replace with your own test data
+-- Sample user preferences with dummy contact information for testing
+-- Note: Using example.com domain for safe test data
 INSERT INTO user_preferences (id, user_id, global_enabled, email, phone, timezone, language, channel_preferences, inserted_at, updated_at)
 VALUES
-    ('pref_1', 'test-user', true, 'jsarabia.dev@gmail.com', '+1234567890', 'America/New_York', 'en', '{"email": {"enabled": true}, "sms": {"enabled": true}, "whatsapp": {"enabled": false}}', NOW(), NOW()),
-    ('pref_2', 'user_123', true, 'jsarabia.dev@gmail.com', '+1234567890', 'America/New_York', 'en', '{"email": {"enabled": true}, "sms": {"enabled": false}}', NOW(), NOW()),
+    ('pref_1', 'test-user', true, 'user1@example.com', '+1234567890', 'America/New_York', 'en', '{"email": {"enabled": true}, "sms": {"enabled": true}, "whatsapp": {"enabled": false}}', NOW(), NOW()),
+    ('pref_2', 'user_123', true, 'user2@example.com', '+1234567890', 'America/New_York', 'en', '{"email": {"enabled": true}, "sms": {"enabled": false}}', NOW(), NOW()),
     ('pref_3', 'user_456', true, 'jane.smith@example.com', '+56994599483', 'Europe/Madrid', 'es', '{"email": {"enabled": true}, "sms": {"enabled": true}, "whatsapp": {"enabled": true}}', NOW(), NOW()),
     ('pref_4', 'user_789', false, 'disabled.user@example.com', '+19876543210', 'UTC', 'en', '{}', NOW(), NOW())
 ON CONFLICT (id) DO NOTHING;

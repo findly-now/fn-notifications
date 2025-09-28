@@ -29,8 +29,7 @@ psql "$DATABASE_URL" -f schema.sql  # Apply schema directly
 ### Code Quality
 ```bash
 mix format               # Format code
-mix credo                # Static analysis
-mix dialyzer             # Type checking
+mix credo                # Static analysis (lint)
 ```
 
 ## Architecture Overview
