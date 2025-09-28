@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(timeout 300 make setup)",
+      "Bash(MIX_ENV=test mix test --exclude integration)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -1,0 +1,45 @@
+# Ignore build artifacts
+_build/
+deps/
+erl_crash.dump
+
+# Ignore node modules and compiled assets
+assets/node_modules/
+priv/static/assets/
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.iml
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore test files
+cover/
+*.coverdata
+
+# Ignore log files
+*.log
+
+# Ignore temporary files
+tmp/
+temp/
+
+# Ignore git
+.git/
+.gitignore
+
+# Ignore development files
+.claude/
+
+# Keep important config files
+!config/
+!priv/repo/
+!priv/gettext/
+
+# Ignore large files
+*.dump
+*.tar
+*.zip

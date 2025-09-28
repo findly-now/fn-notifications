@@ -1,0 +1,542 @@
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
+
+/*
+ * Findly Now Lost & Found Notification System
+ * Professional, clean design system for notification management
+ */
+
+/* ===== CUSTOM PROPERTIES ===== */
+:root {
+  /* Findly Now Brand Colors */
+  --primary: theme('colors.indigo.600');
+  --primary-light: theme('colors.indigo.500');
+  --primary-dark: theme('colors.indigo.700');
+
+  --secondary: theme('colors.emerald.500');
+  --secondary-light: theme('colors.emerald.400');
+  --secondary-dark: theme('colors.emerald.600');
+
+  --accent: theme('colors.amber.400');
+  --accent-light: theme('colors.amber.300');
+  --accent-dark: theme('colors.amber.500');
+
+  /* Status Colors for Lost & Found */
+  --status-found: theme('colors.green.500');
+  --status-pending: theme('colors.yellow.500');
+  --status-lost: theme('colors.red.500');
+  --status-claimed: theme('colors.blue.500');
+
+  /* Semantic Colors */
+  --success: theme('colors.green.600');
+  --warning: theme('colors.yellow.600');
+  --error: theme('colors.red.600');
+  --info: theme('colors.blue.600');
+
+  /* Surfaces */
+  --surface: theme('colors.white');
+  --surface-secondary: theme('colors.gray.50');
+  --surface-tertiary: theme('colors.gray.100');
+
+  /* Borders */
+  --border: theme('colors.gray.200');
+  --border-light: theme('colors.gray.100');
+  --border-dark: theme('colors.gray.300');
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+
+  /* Typography */
+  --font-family: theme('fontFamily.sans');
+  --font-mono: theme('fontFamily.mono');
+}
+
+/* ===== BASE STYLES ===== */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-family);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ===== NAVIGATION ===== */
+.nav-link {
+  @apply inline-flex items-center px-1 pt-1 text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors duration-200;
+  border-bottom: 2px solid transparent;
+}
+
+.nav-link.active {
+  @apply text-indigo-600 border-indigo-500;
+}
+
+/* ===== FORM ELEMENTS ===== */
+.filter-select {
+  @apply block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm;
+}
+
+.form-input {
+  @apply block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm;
+}
+
+.form-label {
+  @apply block text-sm font-medium text-gray-700 mb-1;
+}
+
+/* ===== BUTTONS ===== */
+.btn {
+  @apply inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2;
+}
+
+.btn-primary {
+  @apply text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500;
+}
+
+.btn-secondary {
+  @apply text-gray-700 bg-white border-gray-300 hover:bg-gray-50 focus:ring-indigo-500;
+}
+
+.btn-success {
+  @apply text-white bg-green-600 hover:bg-green-700 focus:ring-green-500;
+}
+
+.btn-warning {
+  @apply text-white bg-yellow-600 hover:bg-yellow-700 focus:ring-yellow-500;
+}
+
+.btn-danger {
+  @apply text-white bg-red-600 hover:bg-red-700 focus:ring-red-500;
+}
+
+.btn-icon {
+  @apply p-2 rounded-md;
+}
+
+/* ===== CARDS ===== */
+.card {
+  @apply bg-white rounded-lg shadow-sm border border-gray-200;
+}
+
+.card-hover {
+  @apply transition-all duration-200 hover:shadow-md;
+}
+
+.card-interactive {
+  @apply cursor-pointer transition-all duration-200 hover:shadow-md hover:scale-[1.02];
+}
+
+/* ===== FLASH MESSAGES ===== */
+.flash {
+  @apply rounded-md p-4 mb-4 border-l-4;
+  animation: slideInRight 0.3s ease-out;
+}
+
+.flash-info {
+  @apply bg-blue-50 border-blue-400 text-blue-800;
+}
+
+.flash-success {
+  @apply bg-green-50 border-green-400 text-green-800;
+}
+
+.flash-warning {
+  @apply bg-yellow-50 border-yellow-400 text-yellow-800;
+}
+
+.flash-error {
+  @apply bg-red-50 border-red-400 text-red-800;
+}
+
+/* ===== BADGES ===== */
+.badge {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+.badge-default {
+  @apply bg-gray-100 text-gray-800;
+}
+
+.badge-primary {
+  @apply bg-indigo-100 text-indigo-800;
+}
+
+.badge-success {
+  @apply bg-green-100 text-green-800;
+}
+
+.badge-warning {
+  @apply bg-yellow-100 text-yellow-800;
+}
+
+.badge-danger {
+  @apply bg-red-100 text-red-800;
+}
+
+.badge-info {
+  @apply bg-blue-100 text-blue-800;
+}
+
+/* Lost & Found specific badge styles */
+.badge-lost {
+  @apply bg-red-100 text-red-800;
+}
+
+.badge-found {
+  @apply bg-green-100 text-green-800;
+}
+
+.badge-claimed {
+  @apply bg-blue-100 text-blue-800;
+}
+
+.badge-resolved {
+  @apply bg-emerald-100 text-emerald-800;
+}
+
+/* ===== STATUS INDICATORS ===== */
+.status-indicator {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+.status-delivered {
+  @apply bg-green-100 text-green-800;
+}
+
+.status-pending {
+  @apply bg-yellow-100 text-yellow-800;
+}
+
+.status-failed {
+  @apply bg-red-100 text-red-800;
+}
+
+.status-cancelled {
+  @apply bg-gray-100 text-gray-800;
+}
+
+/* ===== CHANNEL INDICATORS ===== */
+.channel-email {
+  @apply bg-blue-100 text-blue-800;
+}
+
+.channel-sms {
+  @apply bg-green-100 text-green-800;
+}
+
+.channel-whatsapp {
+  @apply bg-yellow-100 text-yellow-800;
+}
+
+/* ===== LOADING STATES ===== */
+.loading-spinner {
+  @apply inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-current border-r-transparent;
+}
+
+.loading-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ===== EMPTY STATES ===== */
+.empty-state {
+  @apply text-center py-12;
+}
+
+.empty-state-icon {
+  @apply text-6xl mb-4 opacity-50;
+}
+
+.empty-state-title {
+  @apply text-lg font-semibold text-gray-900 mb-2;
+}
+
+.empty-state-description {
+  @apply text-gray-500 mb-6;
+}
+
+/* ===== UTILITIES ===== */
+.line-clamp-2 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.line-clamp-3 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* ===== ANIMATIONS ===== */
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-1rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: .5;
+  }
+}
+
+/* Animation classes */
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.animate-slide-down {
+  animation: slideInDown 0.3s ease-out;
+}
+
+.animate-slide-right {
+  animation: slideInRight 0.3s ease-out;
+}
+
+/* ===== RESPONSIVE UTILITIES ===== */
+@media (max-width: 640px) {
+  .nav-link {
+    @apply px-3 py-2 rounded-md text-base font-medium block;
+    border-bottom: none;
+  }
+
+  .card {
+    @apply mx-4;
+  }
+}
+
+/* ===== DARK MODE SUPPORT ===== */
+@media (prefers-color-scheme: dark) {
+  /* Add dark mode styles if needed in the future */
+}
+
+/* ===== PRINT STYLES ===== */
+@media print {
+  .nav,
+  .flash,
+  button,
+  .btn {
+    display: none !important;
+  }
+
+  .card {
+    @apply border border-gray-300 mb-4;
+    box-shadow: none;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+  }
+}
+
+/* ===== FOCUS INDICATORS ===== */
+*:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+*:focus-visible {
+  @apply ring-2 ring-indigo-500 ring-offset-2;
+}
+
+/* ===== ACCESSIBILITY ===== */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ===== CUSTOM COMPONENTS ===== */
+
+/* KPI Cards */
+.kpi-card {
+  @apply bg-white rounded-lg shadow-sm border border-gray-200 p-6 transition-all duration-200 hover:shadow-md hover:scale-105;
+}
+
+.kpi-card-icon {
+  @apply flex-shrink-0 rounded-md p-3 text-2xl;
+}
+
+.kpi-card-content {
+  @apply ml-5 w-0 flex-1;
+}
+
+.kpi-card-title {
+  @apply text-sm font-medium text-gray-500 truncate;
+}
+
+.kpi-card-value {
+  @apply text-2xl font-bold text-gray-900;
+}
+
+.kpi-card-subtitle {
+  @apply text-xs text-gray-500 mt-1;
+}
+
+/* Notification Cards */
+.notification-card {
+  @apply bg-white rounded-lg shadow-sm border border-gray-200 p-6 transition-all duration-200 hover:shadow-md;
+}
+
+.notification-card-header {
+  @apply flex items-start justify-between mb-4;
+}
+
+.notification-card-badges {
+  @apply flex items-center space-x-2 mb-3;
+}
+
+.notification-card-title {
+  @apply text-lg font-semibold text-gray-900 mb-2;
+}
+
+.notification-card-body {
+  @apply text-gray-600 mb-3;
+}
+
+.notification-card-meta {
+  @apply text-sm text-gray-500;
+}
+
+.notification-card-actions {
+  @apply ml-6 flex-shrink-0;
+}
+
+/* Activity Feed */
+.activity-item {
+  @apply flex items-start space-x-3 p-3 rounded-lg transition-colors duration-200 hover:bg-gray-50;
+}
+
+.activity-icon {
+  @apply w-8 h-8 rounded-full flex items-center justify-center text-sm;
+}
+
+.activity-content {
+  @apply flex-1 min-w-0;
+}
+
+.activity-title {
+  @apply text-sm font-medium text-gray-900 truncate;
+}
+
+.activity-meta {
+  @apply text-xs text-gray-500;
+}
+
+/* Stats Grid */
+.stats-grid {
+  @apply grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4;
+}
+
+/* Filter Panel */
+.filter-panel {
+  @apply bg-white rounded-lg shadow-sm border border-gray-200 p-6;
+}
+
+.filter-grid {
+  @apply grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4;
+}
+
+/* Page Header */
+.page-header {
+  @apply md:flex md:items-center md:justify-between mb-8;
+}
+
+.page-title {
+  @apply text-3xl font-bold text-gray-900;
+}
+
+.page-subtitle {
+  @apply mt-2 text-lg text-gray-600;
+}
+
+/* ===== COMPONENT SPECIFIC STYLES ===== */
+
+/* Navigation active state */
+.nav-link[aria-current="page"] {
+  @apply text-indigo-600 border-indigo-500;
+}
+
+/* Table styles */
+.table {
+  @apply min-w-full divide-y divide-gray-200;
+}
+
+.table th {
+  @apply px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider;
+}
+
+.table td {
+  @apply px-6 py-4 whitespace-nowrap text-sm text-gray-900;
+}
+
+.table tbody tr:nth-child(even) {
+  @apply bg-gray-50;
+}
+
+/* ===== VENDOR OVERRIDES ===== */
+
+/* Phoenix LiveView loading states */
+.phx-loading {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.phx-error {
+  @apply bg-red-50 border border-red-200 text-red-700;
+}
+
+.phx-success {
+  @apply bg-green-50 border border-green-200 text-green-700;
+}

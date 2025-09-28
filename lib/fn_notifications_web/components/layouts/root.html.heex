@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content={get_csrf_token()} />
+    <.live_title suffix=" · Findly Now Notifications">
+      <%= assigns[:page_title] || "Lost & Found Notifications" %>
+    </.live_title>
+    <link phx-track-static rel="stylesheet" href={~p"/assets/app.css"} />
+    <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js"}>
+    </script>
+  </head>
+
+  <body class="bg-gray-50 font-sans antialiased">
+    <!-- Navigation Header -->
+    <nav class="bg-white border-b border-gray-200 shadow-sm">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between h-16">
+          <div class="flex items-center">
+            <div class="flex-shrink-0">
+              <.link navigate={~p"/"} class="flex items-center">
+                <div class="text-2xl font-bold text-indigo-600">📱</div>
+                <div class="ml-2">
+                  <div class="text-lg font-semibold text-gray-900">Findly Now</div>
+                  <div class="text-xs text-gray-500 -mt-1">Notifications</div>
+                </div>
+              </.link>
+            </div>
+
+            <div class="hidden md:ml-10 md:flex md:space-x-8">
+              <.link navigate={~p"/"} class="nav-link">
+                📊 Dashboard
+              </.link>
+              <.link navigate={~p"/notifications"} class="nav-link">
+                📋 All Notifications
+              </.link>
+              <.link navigate={~p"/preferences"} class="nav-link">
+                ⚙️ Settings
+              </.link>
+            </div>
+          </div>
+
+          <div class="flex items-center">
+            <div class="hidden md:flex md:items-center md:space-x-4">
+              <!-- Status Indicator -->
+              <div class="flex items-center text-sm text-gray-600">
+                <div class="w-2 h-2 bg-green-400 rounded-full mr-2"></div>
+                Lost & Found System Active
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="min-h-screen">
+      <%= @inner_content %>
+    </main>
+
+    <!-- Flash messages -->
+    <div id="flash-container" class="fixed top-4 right-4 z-50 space-y-2">
+      <.flash_group flash={@flash} />
+    </div>
+  </body>
+</html>

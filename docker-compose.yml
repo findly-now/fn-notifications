@@ -1,0 +1,59 @@
+services:
+  # FN-Notifications Application - Cloud Native
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "4000:4000"
+    environment:
+      # Environment Configuration
+      ENVIRONMENT: "${ENVIRONMENT:-staging}"
+
+      # Cloud Database (PostgreSQL)
+      DATABASE_URL: "${DATABASE_URL}"
+      POSTGRES_URL: "${POSTGRES_URL:-${DATABASE_URL}}"
+
+      # Cloud Event Streaming (Confluent Cloud)
+      KAFKA_BROKERS: "${KAFKA_BROKERS}"
+      KAFKA_API_KEY: "${KAFKA_API_KEY}"
+      KAFKA_API_SECRET: "${KAFKA_API_SECRET}"
+      KAFKA_CONSUMER_GROUP: "${KAFKA_CONSUMER_GROUP:-fn-notifications-cloud}"
+
+      # Cloud Storage
+      BUCKET_URL: "${BUCKET_URL:-}"
+      BUCKET_NAME: "${BUCKET_NAME:-}"
+      STORAGE_PROJECT_ID: "${STORAGE_PROJECT_ID:-}"
+      STORAGE_SERVICE_ACCOUNT_JSON: "${STORAGE_SERVICE_ACCOUNT_JSON:-}"
+
+      # Application Configuration
+      SECRET_KEY_BASE: "${SECRET_KEY_BASE:-your-secret-key-base-here-change-in-production}"
+      PHX_HOST: "${PHX_HOST:-localhost}"
+      WEB_BASE_URL: "${WEB_BASE_URL:-http://localhost:4000}"
+      SENDER_EMAIL: "${SENDER_EMAIL:-notifications@fnnotifications.local}"
+
+      # Notification Mode Configuration
+      TEST_MODE: "${TEST_MODE:-false}"
+      LOG_TWILIO_REQUESTS: "${LOG_TWILIO_REQUESTS:-true}"
+
+      # External Services (Twilio)
+      TWILIO_ACCOUNT_SID: "${TWILIO_ACCOUNT_SID:-}"
+      TWILIO_AUTH_TOKEN: "${TWILIO_AUTH_TOKEN:-}"
+      TWILIO_PHONE_NUMBER: "${TWILIO_PHONE_NUMBER:-+1234567890}"
+      TWILIO_WHATSAPP_NUMBER: "${TWILIO_WHATSAPP_NUMBER:-whatsapp:+14155238886}"
+
+      # Email SMTP Configuration
+      SMTP_HOST: "${SMTP_HOST:-smtp.gmail.com}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USERNAME: "${SMTP_USERNAME:-}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+    # No local service dependencies - using cloud services
+    volumes:
+      - .:/app:cached
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# No volumes needed - using cloud services

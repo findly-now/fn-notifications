@@ -1,0 +1,17 @@
+{
+  "coverage_options": {
+    "minimum_coverage": 85,
+    "treat_no_relevant_lines_as_covered": true
+  },
+  "skip_files": [
+    "test/",
+    "deps/",
+    "_build/",
+    "lib/fn_notifications_web/channels/user_socket.ex",
+    "lib/fn_notifications_web/endpoint.ex",
+    "lib/fn_notifications_web/telemetry.ex"
+  ],
+  "terminal_options": {
+    "file_column_width": 40
+  }
+}

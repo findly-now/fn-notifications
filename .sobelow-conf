@@ -1,0 +1,9 @@
+[
+  verbose: true,
+  private: false,
+  skip: [],
+  format: "txt",
+  out: "",
+  threshold: "low",
+  exit: "low"
+]
