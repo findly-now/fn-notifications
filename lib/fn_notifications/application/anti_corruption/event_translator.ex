@@ -44,6 +44,23 @@ defmodule FnNotifications.Application.AntiCorruption.EventTranslator do
     {:error, "Invalid user event format"}
   end
 
+  @doc """
+  Translates matcher events from external system to notification commands.
+  """
+  @spec translate_matcher_event(external_event()) :: {:ok, [domain_command()]} | {:error, String.t()}
+  def translate_matcher_event(%{"event_type" => event_type, "data" => data} = _event) do
+    case event_type do
+      "post.matched" -> translate_matcher_post_matched(data)
+      "post.claimed" -> translate_matcher_post_claimed(data)
+      "match.expired" -> translate_match_expired(data)
+      _ -> {:error, "Unknown matcher event type: #{event_type}"}
+    end
+  end
+
+  def translate_matcher_event(_event) do
+    {:error, "Invalid matcher event format"}
+  end
+
   # Private translation functions for post events
 
   defp translate_post_created(%{
@@ -176,6 +193,89 @@ defmodule FnNotifications.Application.AntiCorruption.EventTranslator do
     {:ok, []}
   end
 
+  # Private translation functions for matcher events
+
+  defp translate_matcher_post_matched(%{
+         "post_id" => _post_id,
+         "matched_post_id" => _matched_post_id,
+         "reporter_id" => reporter_id,
+         "matcher_id" => matcher_id
+       } = data) do
+    variables = build_matcher_variables(data)
+
+    # Notify both the reporter and the matcher about the match
+    commands = [
+      build_notification_command(
+        reporter_id,
+        :email,
+        "match.found",
+        variables
+      ),
+      build_notification_command(
+        matcher_id,
+        :email,
+        "match.found",
+        variables
+      )
+    ]
+
+    {:ok, Enum.filter(commands, & &1)}
+  end
+
+  defp translate_matcher_post_claimed(%{
+         "post_id" => _post_id,
+         "reporter_id" => reporter_id,
+         "claimer_id" => claimer_id
+       } = data) do
+    variables = build_matcher_variables(data)
+
+    # Send urgent SMS to reporter that someone claimed their item
+    commands = [
+      build_notification_command(
+        reporter_id,
+        :sms,
+        "item.claimed",
+        variables
+      ),
+      # Send email confirmation to claimer
+      build_notification_command(
+        claimer_id,
+        :email,
+        "claim.submitted",
+        variables
+      )
+    ]
+
+    {:ok, Enum.filter(commands, & &1)}
+  end
+
+  defp translate_match_expired(%{
+         "match_id" => _match_id,
+         "post_id" => _post_id,
+         "reporter_id" => reporter_id,
+         "matcher_id" => matcher_id
+       } = data) do
+    variables = build_matcher_variables(data)
+
+    # Notify both parties that the match has expired
+    commands = [
+      build_notification_command(
+        reporter_id,
+        :email,
+        "match.expired",
+        variables
+      ),
+      build_notification_command(
+        matcher_id,
+        :email,
+        "match.expired",
+        variables
+      )
+    ]
+
+    {:ok, Enum.filter(commands, & &1)}
+  end
+
   # Helper functions
 
   defp build_notification_command(user_id, channel, event_type, variables) do
@@ -213,6 +313,20 @@ defmodule FnNotifications.Application.AntiCorruption.EventTranslator do
     }
   end
 
+  defp build_matcher_variables(data) do
+    %{
+      "post_id" => Map.get(data, "post_id"),
+      "matched_post_id" => Map.get(data, "matched_post_id"),
+      "match_id" => Map.get(data, "match_id"),
+      "reporter_id" => Map.get(data, "reporter_id"),
+      "matcher_id" => Map.get(data, "matcher_id"),
+      "claimer_id" => Map.get(data, "claimer_id"),
+      "confidence_score" => Map.get(data, "confidence_score"),
+      "match_reason" => Map.get(data, "match_reason"),
+      "claim_message" => Map.get(data, "claim_message")
+    }
+  end
+
   defp extract_location_string(%{"location" => %{"address" => address}}) when is_binary(address) do
     address
   end
@@ -228,6 +342,10 @@ defmodule FnNotifications.Application.AntiCorruption.EventTranslator do
       {"post.created", :email} -> "New Item Found"
       {"post.matched", :email} -> "Possible Match Found"
       {"user.registered", :email} -> "Welcome to Findly Now!"
+      {"match.found", :email} -> "🎉 Match Found!"
+      {"item.claimed", :sms} -> "🚨 URGENT: Someone claimed your item!"
+      {"claim.submitted", :email} -> "Claim Submitted Successfully"
+      {"match.expired", :email} -> "Match Expired"
       _ -> "Findly Now Notification"
     end
   end
@@ -242,6 +360,27 @@ defmodule FnNotifications.Application.AntiCorruption.EventTranslator do
 
       {"user.registered", :email} ->
         "Welcome #{Map.get(variables, "user_name", "")}! Your account has been created successfully."
+
+      {"match.found", :email} ->
+        "Great news! We found a potential match for your lost/found item. " <>
+        "Confidence: #{Map.get(variables, "confidence_score", "N/A")}. " <>
+        "Reason: #{Map.get(variables, "match_reason", "AI analysis")}. " <>
+        "Please check your dashboard to review the match."
+
+      {"item.claimed", :sms} ->
+        "URGENT: Someone has claimed your item! " <>
+        "#{Map.get(variables, "claim_message", "No message provided")}. " <>
+        "Please respond immediately to coordinate pickup."
+
+      {"claim.submitted", :email} ->
+        "Your claim has been submitted successfully. " <>
+        "The item owner will be notified and should contact you soon. " <>
+        "Please keep your phone available for coordination."
+
+      {"match.expired", :email} ->
+        "A match for your item has expired due to no response. " <>
+        "The system will continue looking for new matches automatically. " <>
+        "You can also check your dashboard for more potential matches."
 
       _ ->
         "You have a new notification from Findly Now."

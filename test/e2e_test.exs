@@ -3,6 +3,7 @@ defmodule FnNotifications.E2ETest do
 
   alias FnNotifications.Application.EventHandlers.PostsEventProcessor
   alias FnNotifications.Application.EventHandlers.UsersEventProcessor
+  alias FnNotifications.Application.EventHandlers.MatcherEventProcessor
   alias FnNotifications.Domain.Entities.UserPreferences
   alias FnNotifications.Infrastructure.Repositories.{UserPreferencesRepository, NotificationRepository}
 
@@ -181,6 +182,141 @@ defmodule FnNotifications.E2ETest do
       notification = List.first(notifications)
       assert notification.user_id == user_id
       assert notification.metadata["post_id"] == "post-resolve-001"
+    end
+  end
+
+  describe "Matcher Event Processing" do
+    test "matcher post.matched event triggers notifications for both users" do
+      reporter_id = "test-reporter-001"
+      matcher_id = "test-matcher-001"
+
+      create_test_user_preferences(reporter_id, %{email: %{enabled: true}})
+      create_test_user_preferences(matcher_id, %{email: %{enabled: true}})
+
+      event_data = %{
+        "event_type" => "post.matched",
+        "data" => %{
+          "post_id" => "550e8400-e29b-41d4-a716-446655440000",
+          "matched_post_id" => "550e8400-e29b-41d4-a716-446655440001",
+          "reporter_id" => reporter_id,
+          "matcher_id" => matcher_id,
+          "confidence_score" => 0.92,
+          "match_reason" => "Location proximity and visual similarity"
+        }
+      }
+
+      message = create_broadway_message(event_data)
+      result = MatcherEventProcessor.handle_message(:default, message, %{})
+
+      assert is_list(result.data)
+      assert result.status == :ok
+
+      # Verify both users received match notifications
+      {:ok, reporter_notifications} = NotificationRepository.get_by_user_id(reporter_id)
+      {:ok, matcher_notifications} = NotificationRepository.get_by_user_id(matcher_id)
+
+      assert length(reporter_notifications) > 0
+      assert length(matcher_notifications) > 0
+
+      reporter_notification = List.first(reporter_notifications)
+      assert reporter_notification.channel == :email
+      assert reporter_notification.title =~ "Match Found"
+
+      matcher_notification = List.first(matcher_notifications)
+      assert matcher_notification.channel == :email
+      assert matcher_notification.title =~ "Match Found"
+    end
+
+    test "matcher post.claimed event triggers urgent SMS to reporter and email to claimer" do
+      reporter_id = "test-reporter-claim-001"
+      claimer_id = "test-claimer-001"
+
+      create_test_user_preferences(reporter_id, %{sms: %{enabled: true}})
+      create_test_user_preferences(claimer_id, %{email: %{enabled: true}})
+
+      event_data = %{
+        "event_type" => "post.claimed",
+        "data" => %{
+          "post_id" => "550e8400-e29b-41d4-a716-446655440002",
+          "reporter_id" => reporter_id,
+          "claimer_id" => claimer_id,
+          "claim_message" => "I think this is my lost iPhone!"
+        }
+      }
+
+      message = create_broadway_message(event_data)
+      result = MatcherEventProcessor.handle_message(:default, message, %{})
+
+      assert is_list(result.data)
+      assert result.status == :ok
+
+      # Verify reporter received urgent SMS
+      {:ok, reporter_notifications} = NotificationRepository.get_by_user_id(reporter_id)
+      sms_notification = Enum.find(reporter_notifications, fn n -> n.channel == :sms end)
+      assert sms_notification != nil
+      assert sms_notification.title =~ "URGENT"
+      assert sms_notification.title =~ "claimed"
+
+      # Verify claimer received confirmation email
+      {:ok, claimer_notifications} = NotificationRepository.get_by_user_id(claimer_id)
+      email_notification = Enum.find(claimer_notifications, fn n -> n.channel == :email end)
+      assert email_notification != nil
+      assert email_notification.title =~ "Claim Submitted"
+    end
+
+    test "match.expired event triggers email notifications to both users" do
+      reporter_id = "test-reporter-expire-001"
+      matcher_id = "test-matcher-expire-001"
+
+      create_test_user_preferences(reporter_id, %{email: %{enabled: true}})
+      create_test_user_preferences(matcher_id, %{email: %{enabled: true}})
+
+      event_data = %{
+        "event_type" => "match.expired",
+        "data" => %{
+          "match_id" => "550e8400-e29b-41d4-a716-446655440003",
+          "post_id" => "550e8400-e29b-41d4-a716-446655440004",
+          "matched_post_id" => "550e8400-e29b-41d4-a716-446655440005",
+          "reporter_id" => reporter_id,
+          "matcher_id" => matcher_id,
+          "expiration_reason" => "No response after 24 hours"
+        }
+      }
+
+      message = create_broadway_message(event_data)
+      result = MatcherEventProcessor.handle_message(:default, message, %{})
+
+      assert is_list(result.data)
+      assert result.status == :ok
+
+      # Verify both users received expiration notifications
+      {:ok, reporter_notifications} = NotificationRepository.get_by_user_id(reporter_id)
+      {:ok, matcher_notifications} = NotificationRepository.get_by_user_id(matcher_id)
+
+      assert length(reporter_notifications) > 0
+      assert length(matcher_notifications) > 0
+
+      reporter_notification = List.first(reporter_notifications)
+      assert reporter_notification.channel == :email
+      assert reporter_notification.title =~ "Match Expired"
+
+      matcher_notification = List.first(matcher_notifications)
+      assert matcher_notification.channel == :email
+      assert matcher_notification.title =~ "Match Expired"
+    end
+
+    test "invalid matcher event type returns error" do
+      event_data = %{
+        "event_type" => "invalid.matcher.event",
+        "data" => %{
+          "some" => "data"
+        }
+      }
+
+      message = create_broadway_message(event_data)
+      result = MatcherEventProcessor.handle_message(:default, message, %{})
+
+      assert result.status == :failed
     end
   end
 
