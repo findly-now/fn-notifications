@@ -206,7 +206,7 @@ defmodule FnNotifications.Infrastructure.Adapters.GcsAdapter do
     }
   end
 
-  defp perform_upload(conn, bucket, object_name, content, opts) do
+  defp perform_upload(_conn, bucket, object_name, content, _opts) do
     try do
       # This is a placeholder - actual implementation would use GoogleApi.Storage.V1.Api.Objects.storage_objects_insert/4
       Logger.debug("Uploading to GCS", bucket: bucket, object: object_name, size: byte_size(content))
@@ -219,7 +219,7 @@ defmodule FnNotifications.Infrastructure.Adapters.GcsAdapter do
     end
   end
 
-  defp perform_download(conn, bucket, object_name) do
+  defp perform_download(_conn, bucket, object_name) do
     try do
       # This is a placeholder - actual implementation would use GoogleApi.Storage.V1.Api.Objects.storage_objects_get/4
       Logger.debug("Downloading from GCS", bucket: bucket, object: object_name)
@@ -232,7 +232,7 @@ defmodule FnNotifications.Infrastructure.Adapters.GcsAdapter do
     end
   end
 
-  defp perform_delete(conn, bucket, object_name) do
+  defp perform_delete(_conn, bucket, object_name) do
     try do
       # This is a placeholder - actual implementation would use GoogleApi.Storage.V1.Api.Objects.storage_objects_delete/3
       Logger.debug("Deleting from GCS", bucket: bucket, object: object_name)

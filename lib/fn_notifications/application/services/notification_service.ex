@@ -161,11 +161,6 @@ defmodule FnNotifications.Application.Services.NotificationService do
     end
   end
 
-  @spec attempt_delivery(NotificationAggregate.t()) :: :success | {:error, String.t()}
-  defp attempt_delivery(notification_aggregate) do
-    notification = NotificationAggregate.notification(notification_aggregate)
-    @delivery_service.deliver(notification)
-  end
 
   @spec attempt_delivery(NotificationAggregate.t(), UserPreferences.t()) :: :success | {:error, String.t()}
   defp attempt_delivery(notification_aggregate, user_preferences) do

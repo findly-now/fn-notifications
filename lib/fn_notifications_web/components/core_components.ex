@@ -64,8 +64,8 @@ defmodule FnNotificationsWeb.CoreComponents do
 
   def flash_group(assigns) do
     ~H"""
-    <.flash :if={live_flash(@flash, :info)} kind={:info} title="Info" flash={@flash} />
-    <.flash :if={live_flash(@flash, :error)} kind={:error} title="Error" flash={@flash} />
+    <.flash :if={Phoenix.Flash.get(@flash, :info)} kind={:info} title="Info" flash={@flash} />
+    <.flash :if={Phoenix.Flash.get(@flash, :error)} kind={:error} title="Error" flash={@flash} />
     """
   end
 

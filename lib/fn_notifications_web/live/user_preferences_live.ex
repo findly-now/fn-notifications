@@ -520,17 +520,6 @@ defmodule FnNotificationsWeb.UserPreferencesLive do
     load_users_and_stats(socket)
   end
 
-  defp update_user_preference_in_list(socket, user_id, preference_key, value) do
-    users = Enum.map(socket.assigns.users, fn user ->
-      if user.user_id == user_id do
-        Map.put(user, String.to_existing_atom(preference_key), value)
-      else
-        user
-      end
-    end)
-
-    assign(socket, users: users)
-  end
 
   # Helper function to build channel preferences update map
   defp build_channel_preferences_update("email_enabled", enabled) do

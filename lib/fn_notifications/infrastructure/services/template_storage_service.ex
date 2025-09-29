@@ -32,7 +32,7 @@ defmodule FnNotifications.Infrastructure.Services.TemplateStorageService do
     content_type = get_content_type(format)
 
     case GcsAdapter.upload_file(object_name, content, content_type: content_type) do
-      {:ok, url} ->
+      {:ok, _url} ->
         # Invalidate cache for this template
         cache_key = build_cache_key(template_name, format)
         Cachex.del(:template_cache, cache_key)

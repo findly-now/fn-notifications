@@ -80,7 +80,7 @@ defmodule FnNotifications.Infrastructure.Adapters.DatadogAdapter do
   end
 
   # Private safe wrapper functions to handle missing Statix configuration
-  defp safe_increment(metric, opts \\ []) do
+  defp safe_increment(metric, opts) do
     try do
       increment(metric, opts)
     rescue
@@ -88,7 +88,7 @@ defmodule FnNotifications.Infrastructure.Adapters.DatadogAdapter do
     end
   end
 
-  defp safe_gauge(metric, value, opts \\ []) do
+  defp safe_gauge(metric, value, opts) do
     try do
       gauge(metric, value, opts)
     rescue
@@ -96,7 +96,7 @@ defmodule FnNotifications.Infrastructure.Adapters.DatadogAdapter do
     end
   end
 
-  defp safe_histogram(metric, value, opts \\ []) do
+  defp safe_histogram(metric, value, opts) do
     try do
       histogram(metric, value, opts)
     rescue
