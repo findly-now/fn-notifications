@@ -32,6 +32,20 @@ make test
 - **Enterprise resilience**: Circuit breakers, bulkheads, retry mechanisms
 - **User preferences**: Granular notification controls per channel
 
+## Environment Configuration
+
+### Kafka Topic Configuration
+The service supports configurable Kafka topic names via environment variables:
+
+```bash
+# Topic names (with defaults)
+KAFKA_POSTS_TOPIC=posts.events        # Posts domain events
+KAFKA_MATCHER_TOPIC=posts.matching    # Matcher domain events
+KAFKA_USERS_TOPIC=users.events        # User domain events
+```
+
+This enables environment-specific topic naming while maintaining compatibility with the standardized topic structure defined in fn-docs/STANDARDS.md.
+
 ## Documentation
 
 - **[DEVELOPMENT.md](./DEVELOPMENT.md)** - Complete development guide

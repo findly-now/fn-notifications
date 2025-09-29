@@ -24,7 +24,7 @@ defmodule FnNotifications.Application.EventHandlers.PostsEventProcessor do
         module: {BroadwayKafka.Producer,
           hosts: kafka_hosts(),
           group_id: consumer_group,
-          topics: ["posts.events"],
+          topics: [kafka_topic(:posts_events)],
           offset_reset_policy: :earliest,
           begin_offset: :reset,
           config: kafka_config()
@@ -124,6 +124,11 @@ defmodule FnNotifications.Application.EventHandlers.PostsEventProcessor do
 
   defp kafka_config do
     Application.get_env(:fn_notifications, :kafka_config, [])
+  end
+
+  defp kafka_topic(topic_key) do
+    topics = Application.get_env(:fn_notifications, :kafka_topics, %{})
+    Map.get(topics, topic_key, "posts.events")
   end
 
   defp extract_correlation_id(metadata) do

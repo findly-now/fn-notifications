@@ -29,7 +29,7 @@ defmodule FnNotifications.Application.EventHandlers.MatcherEventProcessor do
         module: {BroadwayKafka.Producer,
           hosts: kafka_hosts(),
           group_id: consumer_group,
-          topics: ["posts.matching"],
+          topics: [kafka_topic(:posts_matching)],
           offset_reset_policy: :earliest,
           begin_offset: :reset,
           config: kafka_config()
@@ -133,6 +133,11 @@ defmodule FnNotifications.Application.EventHandlers.MatcherEventProcessor do
 
   defp kafka_config do
     Application.get_env(:fn_notifications, :kafka_config, [])
+  end
+
+  defp kafka_topic(topic_key) do
+    topics = Application.get_env(:fn_notifications, :kafka_topics, %{})
+    Map.get(topics, topic_key, "posts.matching")
   end
 
   defp extract_correlation_id(metadata) do

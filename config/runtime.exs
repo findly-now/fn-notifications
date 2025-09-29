@@ -53,6 +53,12 @@ kafka_config = [
 config :fn_notifications, :kafka_hosts, kafka_hosts
 config :fn_notifications, :kafka_config, kafka_config
 
+# Kafka topic configuration
+config :fn_notifications, :kafka_topics,
+  posts_events: System.get_env("KAFKA_POSTS_TOPIC", "posts.events"),
+  posts_matching: System.get_env("KAFKA_MATCHER_TOPIC", "posts.matching"),
+  users_events: System.get_env("KAFKA_USERS_TOPIC", "users.events")
+
 # Database configuration for development/Docker/test
 if database_url = System.get_env("DATABASE_URL") do
   # Set appropriate pool configuration based on environment
