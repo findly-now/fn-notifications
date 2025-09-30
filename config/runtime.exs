@@ -20,15 +20,14 @@ if System.get_env("PHX_SERVER") do
   config :fn_notifications, FnNotificationsWeb.Endpoint, server: true
 end
 
-# Kafka configuration - Cloud-only (Confluent Cloud)
+# Kafka configuration - Support both local and cloud environments
 environment = System.get_env("ENVIRONMENT", "staging")
 
-# Always use cloud Kafka configuration
 kafka_brokers = System.get_env("KAFKA_BROKERS") ||
   raise """
   environment variable KAFKA_BROKERS is missing.
-  Set it to your Confluent Cloud bootstrap servers.
-  Example: KAFKA_BROKERS=pkc-xxxxx.us-east-1.aws.confluent.cloud:9092
+  For local development: KAFKA_BROKERS=localhost:9092
+  For cloud: KAFKA_BROKERS=pkc-xxxxx.us-east-1.aws.confluent.cloud:9092
   """
 
 kafka_hosts = kafka_brokers
@@ -38,26 +37,37 @@ kafka_hosts = kafka_brokers
   {host, String.to_integer(port)}
 end)
 
-# SASL authentication for Confluent Cloud (required)
-kafka_config = [
-  sasl: %{
-    mechanism: :plain,
-    username: System.get_env("KAFKA_API_KEY") ||
-      raise("environment variable KAFKA_API_KEY is missing"),
-    password: System.get_env("KAFKA_API_SECRET") ||
-      raise("environment variable KAFKA_API_SECRET is missing")
-  },
-  ssl: [verify: :verify_peer]
-]
+# Kafka configuration - differentiate between local and cloud environments
+# Detect local development by checking if broker contains local hostnames
+is_local_dev = String.contains?(kafka_brokers, ["localhost", "findly-kafka", "127.0.0.1"])
+
+kafka_config = if is_local_dev do
+  # Local development - no authentication
+  []
+else
+  # Cloud environment (Confluent Cloud) - SASL authentication required
+  [
+    sasl: [
+      mechanism: :plain,
+      username: System.get_env("KAFKA_API_KEY") ||
+        raise("environment variable KAFKA_API_KEY is missing"),
+      password: System.get_env("KAFKA_API_SECRET") ||
+        raise("environment variable KAFKA_API_SECRET is missing")
+    ],
+    ssl: [verify: :verify_none]
+  ]
+end
 
 config :fn_notifications, :kafka_hosts, kafka_hosts
 config :fn_notifications, :kafka_config, kafka_config
 
-# Kafka topic configuration
-config :fn_notifications, :kafka_topics,
+# Kafka topic configuration - All events use standardized posts.events topic
+config :fn_notifications, :kafka_topics, %{
   posts_events: System.get_env("KAFKA_POSTS_TOPIC", "posts.events"),
-  posts_matching: System.get_env("KAFKA_MATCHER_TOPIC", "posts.matching"),
-  users_events: System.get_env("KAFKA_USERS_TOPIC", "users.events")
+  posts_matching: System.get_env("KAFKA_MATCHING_TOPIC", "posts.matching"),
+  users_events: System.get_env("KAFKA_USERS_TOPIC", "users.events"),
+  contact_exchange: System.get_env("KAFKA_CONTACT_TOPIC", "contact.exchange")
+}
 
 # Database configuration for development/Docker/test
 if database_url = System.get_env("DATABASE_URL") do
@@ -74,8 +84,8 @@ end
 # Configure notification mode based on environment
 # This overrides the default config.exs settings at runtime
 config :fn_notifications,
-  # Test mode configuration - defaults to true (safe) unless explicitly set to false
-  test_mode: System.get_env("TEST_MODE", "true") == "true",
+  # Test mode configuration - defaults based on environment (prod=false, dev=true)
+  test_mode: System.get_env("TEST_MODE", if(config_env() == :prod, do: "false", else: "true")) == "true",
   log_twilio_requests: System.get_env("LOG_TWILIO_REQUESTS", "false") == "true",
 
   # Application configuration from environment
@@ -111,19 +121,20 @@ end
 
 # Cloud Storage configuration (optional)
 if bucket_name = System.get_env("BUCKET_NAME") do
+  storage_credentials = case System.get_env("STORAGE_SERVICE_ACCOUNT_JSON_CONTENT") do
+    nil ->
+      # Use file path
+      System.get_env("STORAGE_SERVICE_ACCOUNT_JSON")
+    json_content ->
+      # Use direct JSON content (useful for deployment environments)
+      json_content
+  end
+
   config :fn_notifications, :storage,
     bucket: bucket_name,
     bucket_url: System.get_env("BUCKET_URL"),
     project_id: System.get_env("STORAGE_PROJECT_ID"),
-    # Support both file path and direct JSON content
-    credentials: case System.get_env("STORAGE_SERVICE_ACCOUNT_JSON_CONTENT") do
-      nil ->
-        # Use file path
-        System.get_env("STORAGE_SERVICE_ACCOUNT_JSON")
-      json_content ->
-        # Use direct JSON content (useful for deployment environments)
-        Jason.decode!(json_content)
-    end
+    credentials: storage_credentials
 end
 
 if config_env() == :prod do

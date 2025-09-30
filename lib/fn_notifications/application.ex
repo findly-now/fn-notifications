@@ -21,6 +21,7 @@ defmodule FnNotifications.Application do
       {FnNotifications.Application.EventHandlers.PostsEventProcessor, []},
       {FnNotifications.Application.EventHandlers.UsersEventProcessor, []},
       {FnNotifications.Application.EventHandlers.MatcherEventProcessor, []},
+      {FnNotifications.Application.EventHandlers.ContactExchangeEventProcessor, []},
 
       # Background Job Processors
       {Oban, Application.fetch_env!(:fn_notifications, Oban)},

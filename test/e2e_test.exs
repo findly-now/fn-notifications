@@ -320,6 +320,314 @@ defmodule FnNotifications.E2ETest do
     end
   end
 
+  describe "Contact Exchange Event Processing" do
+    test "contact.exchange.requested event triggers notification to post owner" do
+      owner_id = "test-owner-001"
+      requester_id = "test-requester-001"
+
+      create_test_user_preferences(owner_id, %{email: %{enabled: true}})
+      create_test_user_preferences(requester_id, %{email: %{enabled: true}})
+
+      event_data = %{
+        "event_type" => "contact.exchange.requested",
+        "data" => %{
+          "contact_request" => %{
+            "request_id" => "req-001",
+            "message" => "I believe this is my lost wallet",
+            "expires_at" => DateTime.utc_now() |> DateTime.add(24, :hour) |> DateTime.to_iso8601()
+          },
+          "owner" => %{
+            "user_id" => owner_id,
+            "display_name" => "John Owner",
+            "preferences" => %{
+              "timezone" => "UTC",
+              "language" => "en",
+              "notification_channels" => ["email"]
+            }
+          },
+          "requester" => %{
+            "user_id" => requester_id,
+            "display_name" => "Jane Requester",
+            "preferences" => %{
+              "timezone" => "UTC",
+              "language" => "en",
+              "notification_channels" => ["email"]
+            }
+          },
+          "related_post" => %{
+            "id" => "post-001",
+            "title" => "Black leather wallet",
+            "type" => "found"
+          }
+        }
+      }
+
+      message = create_broadway_message(event_data)
+      result = FnNotifications.Application.EventHandlers.ContactExchangeEventProcessor.handle_message(:default, message, %{})
+
+      assert result.status == :ok
+
+      # Verify contact exchange notification was created
+      case FnNotifications.Application.Services.ContactExchangeNotificationService.find_by_request_id("req-001") do
+        {:ok, notification} ->
+          assert notification.request_id == "req-001"
+          assert notification.owner_user_id == owner_id
+          assert notification.requester_user_id == requester_id
+          assert notification.notification_type.value == :request_received
+          assert notification.exchange_status.value == :pending
+
+        {:error, :not_found} ->
+          flunk("Contact exchange notification should have been created")
+      end
+    end
+
+    test "contact.exchange.approved event triggers notification to requester with encrypted contact" do
+      owner_id = "test-owner-002"
+      requester_id = "test-requester-002"
+
+      create_test_user_preferences(owner_id, %{email: %{enabled: true}})
+      create_test_user_preferences(requester_id, %{email: %{enabled: true}})
+
+      event_data = %{
+        "event_type" => "contact.exchange.approved",
+        "data" => %{
+          "contact_approval" => %{
+            "request_id" => "req-002",
+            "approval_type" => "full_contact",
+            "contact_info" => %{
+              "email" => "owner@example.com",
+              "phone" => "+1555123456",
+              "message" => "Please contact me to arrange pickup"
+            },
+            "expires_at" => DateTime.utc_now() |> DateTime.add(24, :hour) |> DateTime.to_iso8601()
+          },
+          "owner" => %{
+            "user_id" => owner_id,
+            "display_name" => "John Owner",
+            "preferences" => %{
+              "timezone" => "UTC",
+              "language" => "en",
+              "notification_channels" => ["email"]
+            }
+          },
+          "requester" => %{
+            "user_id" => requester_id,
+            "display_name" => "Jane Requester",
+            "preferences" => %{
+              "timezone" => "UTC",
+              "language" => "en",
+              "notification_channels" => ["email"]
+            }
+          },
+          "related_post" => %{
+            "id" => "post-002",
+            "title" => "iPhone 12 Pro",
+            "type" => "lost"
+          }
+        }
+      }
+
+      message = create_broadway_message(event_data)
+      result = FnNotifications.Application.EventHandlers.ContactExchangeEventProcessor.handle_message(:default, message, %{})
+
+      assert result.status == :ok
+
+      # Verify contact exchange notification was created with encrypted contact info
+      case FnNotifications.Application.Services.ContactExchangeNotificationService.find_by_request_id("req-002") do
+        {:ok, notification} ->
+          assert notification.request_id == "req-002"
+          assert notification.owner_user_id == owner_id
+          assert notification.requester_user_id == requester_id
+          assert notification.notification_type.value == :approval_granted
+          assert notification.exchange_status.value == :approved
+          assert notification.expires_at != nil
+          # Contact info should be encrypted (not plain text)
+          refute Map.get(notification.contact_info, "email") == "owner@example.com"
+
+        {:error, :not_found} ->
+          flunk("Contact exchange notification should have been created")
+      end
+    end
+
+    test "contact.exchange.denied event triggers notification to requester" do
+      owner_id = "test-owner-003"
+      requester_id = "test-requester-003"
+
+      create_test_user_preferences(owner_id, %{email: %{enabled: true}})
+      create_test_user_preferences(requester_id, %{email: %{enabled: true}})
+
+      event_data = %{
+        "event_type" => "contact.exchange.denied",
+        "data" => %{
+          "contact_denial" => %{
+            "request_id" => "req-003",
+            "denial_reason" => "insufficient_verification",
+            "denial_message" => "Please provide more verification that this is your item"
+          },
+          "owner" => %{
+            "user_id" => owner_id,
+            "display_name" => "John Owner",
+            "preferences" => %{
+              "timezone" => "UTC",
+              "language" => "en",
+              "notification_channels" => ["email"]
+            }
+          },
+          "requester" => %{
+            "user_id" => requester_id,
+            "display_name" => "Jane Requester",
+            "preferences" => %{
+              "timezone" => "UTC",
+              "language" => "en",
+              "notification_channels" => ["email"]
+            }
+          },
+          "related_post" => %{
+            "id" => "post-003",
+            "title" => "Blue backpack",
+            "type" => "found"
+          }
+        }
+      }
+
+      message = create_broadway_message(event_data)
+      result = FnNotifications.Application.EventHandlers.ContactExchangeEventProcessor.handle_message(:default, message, %{})
+
+      assert result.status == :ok
+
+      # Verify contact exchange notification was created
+      case FnNotifications.Application.Services.ContactExchangeNotificationService.find_by_request_id("req-003") do
+        {:ok, notification} ->
+          assert notification.request_id == "req-003"
+          assert notification.owner_user_id == owner_id
+          assert notification.requester_user_id == requester_id
+          assert notification.notification_type.value == :denial_sent
+          assert notification.exchange_status.value == :denied
+          assert Map.get(notification.metadata, "denial_reason") == "insufficient_verification"
+
+        {:error, :not_found} ->
+          flunk("Contact exchange notification should have been created")
+      end
+    end
+
+    test "contact.exchange.expired event triggers expiration notification" do
+      owner_id = "test-owner-004"
+      requester_id = "test-requester-004"
+
+      create_test_user_preferences(owner_id, %{email: %{enabled: true}})
+      create_test_user_preferences(requester_id, %{email: %{enabled: true}})
+
+      event_data = %{
+        "event_type" => "contact.exchange.expired",
+        "data" => %{
+          "contact_expiration" => %{
+            "request_id" => "req-004",
+            "expiration_reason" => "time_limit_reached",
+            "original_status" => "approved"
+          },
+          "involved_users" => %{
+            "owner" => %{
+              "user_id" => owner_id,
+              "display_name" => "John Owner",
+              "preferences" => %{
+                "timezone" => "UTC",
+                "language" => "en",
+                "notification_channels" => ["email"]
+              }
+            },
+            "requester" => %{
+              "user_id" => requester_id,
+              "display_name" => "Jane Requester",
+              "preferences" => %{
+                "timezone" => "UTC",
+                "language" => "en",
+                "notification_channels" => ["email"]
+              }
+            }
+          },
+          "related_post" => %{
+            "id" => "post-004",
+            "title" => "Silver watch",
+            "type" => "lost"
+          }
+        }
+      }
+
+      message = create_broadway_message(event_data)
+      result = FnNotifications.Application.EventHandlers.ContactExchangeEventProcessor.handle_message(:default, message, %{})
+
+      assert result.status == :ok
+
+      # Verify contact exchange notification was created
+      case FnNotifications.Application.Services.ContactExchangeNotificationService.find_by_request_id("req-004") do
+        {:ok, notification} ->
+          assert notification.request_id == "req-004"
+          assert notification.owner_user_id == owner_id
+          assert notification.requester_user_id == requester_id
+          assert notification.notification_type.value == :expiration_notice
+          assert notification.exchange_status.value == :expired
+          assert Map.get(notification.metadata, "expiration_reason") == "time_limit_reached"
+
+        {:error, :not_found} ->
+          flunk("Contact exchange notification should have been created")
+      end
+    end
+
+    test "invalid contact exchange event type returns error" do
+      event_data = %{
+        "event_type" => "contact.exchange.invalid",
+        "data" => %{
+          "some" => "data"
+        }
+      }
+
+      message = create_broadway_message(event_data)
+      result = FnNotifications.Application.EventHandlers.ContactExchangeEventProcessor.handle_message(:default, message, %{})
+
+      assert result.status == :failed
+    end
+
+    test "contact exchange repository operations work correctly" do
+      # Test direct repository operations for contact exchange
+      alias FnNotifications.Infrastructure.Repositories.ContactExchangeNotificationRepository
+      alias FnNotifications.Domain.Entities.ContactExchangeNotification
+
+      # Create a test contact exchange notification
+      {:ok, notification} = ContactExchangeNotification.create_request_notification(%{
+        request_id: "repo-test-001",
+        requester_user_id: "req-user-001",
+        owner_user_id: "owner-user-001",
+        related_post_id: "post-repo-001",
+        metadata: %{"test" => "data"}
+      })
+
+      # Test create
+      {:ok, created} = ContactExchangeNotificationRepository.create(notification)
+      assert created.id == notification.id
+      assert created.request_id == "repo-test-001"
+
+      # Test find by ID
+      {:ok, found} = ContactExchangeNotificationRepository.find_by_id(created.id)
+      assert found.request_id == "repo-test-001"
+
+      # Test find by request ID
+      {:ok, found_by_request} = ContactExchangeNotificationRepository.find_by_request_id("repo-test-001")
+      assert found_by_request.id == created.id
+
+      # Test find by user IDs
+      {:ok, requester_notifications} = ContactExchangeNotificationRepository.find_by_requester_user_id("req-user-001")
+      assert length(requester_notifications) == 1
+
+      {:ok, owner_notifications} = ContactExchangeNotificationRepository.find_by_owner_user_id("owner-user-001")
+      assert length(owner_notifications) == 1
+
+      # Test mark as sent
+      {:ok, marked_sent} = ContactExchangeNotificationRepository.mark_as_sent(created.id)
+      assert marked_sent.notification_sent == true
+      assert marked_sent.sent_at != nil
+    end
+  end
+
   # Helper functions
   defp create_broadway_message(event_data) do
     # Convert map to JSON string as Broadway expects

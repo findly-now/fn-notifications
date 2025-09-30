@@ -11,7 +11,7 @@ defmodule FnNotifications.Application.EventHandlers.MatcherEventProcessor do
   use Broadway
 
   alias FnNotifications.Application.Services.NotificationService
-  alias FnNotifications.Application.AntiCorruption.EventTranslator
+  alias FnNotifications.Application.AntiCorruption.FatEventTranslator
 
   # For generating correlation IDs
   alias UUID
@@ -32,7 +32,7 @@ defmodule FnNotifications.Application.EventHandlers.MatcherEventProcessor do
           topics: [kafka_topic(:posts_matching)],
           offset_reset_policy: :earliest,
           begin_offset: :reset,
-          config: kafka_config()
+          client_config: kafka_config()
         }
       ],
       processors: [
@@ -57,7 +57,7 @@ defmodule FnNotifications.Application.EventHandlers.MatcherEventProcessor do
 
     case decode_message(message) do
       {:ok, event} ->
-        case EventTranslator.translate_matcher_event(event) do
+        case FatEventTranslator.translate_matcher_event(event) do
           {:ok, notification_commands} ->
             Logger.info("Successfully translated matcher event",
               event_type: event["event_type"],
@@ -137,7 +137,15 @@ defmodule FnNotifications.Application.EventHandlers.MatcherEventProcessor do
 
   defp kafka_topic(topic_key) do
     topics = Application.get_env(:fn_notifications, :kafka_topics, %{})
-    Map.get(topics, topic_key, "posts.matching")
+    # Handle both map and keyword list formats
+    case topics do
+      topics when is_map(topics) ->
+        Map.get(topics, topic_key, "posts.events")
+      topics when is_list(topics) ->
+        Keyword.get(topics, topic_key, "posts.events")
+      _ ->
+        "posts.events"
+    end
   end
 
   defp extract_correlation_id(metadata) do

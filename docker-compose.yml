@@ -1,6 +1,30 @@
 services:
-  # FN-Notifications Application - Cloud Native
-  app:
+  # =============================================================================
+  # NOTIFICATIONS DATABASE: PostgreSQL (ISOLATED)
+  # =============================================================================
+  notifications-postgres:
+    image: postgres:15-alpine
+    container_name: notifications-postgres-isolated
+    environment:
+      POSTGRES_DB: notifications_db
+      POSTGRES_USER: notifications_user
+      POSTGRES_PASSWORD: notifications_password
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5433:5432"  # Different port to avoid conflicts
+    volumes:
+      - notifications_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notifications_user -d notifications_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # =============================================================================
+  # FN-Notifications Application - With Isolated Database
+  # =============================================================================
+  notifications-app:
     build:
       context: .
       dockerfile: Dockerfile.dev
@@ -8,14 +32,21 @@ services:
       - "4000:4000"
     environment:
       # Environment Configuration
-      ENVIRONMENT: "${ENVIRONMENT:-staging}"
+      ENVIRONMENT: "${ENVIRONMENT:-development}"
 
-      # Cloud Database (PostgreSQL)
-      DATABASE_URL: "${DATABASE_URL}"
-      POSTGRES_URL: "${POSTGRES_URL:-${DATABASE_URL}}"
+      # Isolated Database (PostgreSQL for Notifications Service)
+      DATABASE_URL: "${DATABASE_URL:-postgresql://notifications_user:notifications_password@notifications-postgres:5432/notifications_db}"
+
+      # Database Connection Pool Settings
+      DB_HOST: "${DB_HOST:-notifications-postgres}"
+      DB_PORT: "${DB_PORT:-5432}"
+      DB_NAME: "${DB_NAME:-notifications_db}"
+      DB_USER: "${DB_USER:-notifications_user}"
+      DB_PASSWORD: "${DB_PASSWORD:-notifications_password}"
+      POOL_SIZE: "${POOL_SIZE:-10}"
 
       # Cloud Event Streaming (Confluent Cloud)
-      KAFKA_BROKERS: "${KAFKA_BROKERS}"
+      KAFKA_BOOTSTRAP_SERVERS: "${KAFKA_BOOTSTRAP_SERVERS}"
       KAFKA_API_KEY: "${KAFKA_API_KEY}"
       KAFKA_API_SECRET: "${KAFKA_API_SECRET}"
       KAFKA_CONSUMER_GROUP: "${KAFKA_CONSUMER_GROUP:-fn-notifications-cloud}"
@@ -47,7 +78,9 @@ services:
       SMTP_PORT: "${SMTP_PORT:-587}"
       SMTP_USERNAME: "${SMTP_USERNAME:-}"
       SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
-    # No local service dependencies - using cloud services
+    depends_on:
+      notifications-postgres:
+        condition: service_healthy
     volumes:
       - .:/app:cached
     healthcheck:
@@ -56,4 +89,6 @@ services:
       timeout: 10s
       retries: 3
 
-# No volumes needed - using cloud services
+volumes:
+  notifications_postgres_data:
+    name: fn-notifications-postgres-data

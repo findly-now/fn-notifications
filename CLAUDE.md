@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+**Document Ownership**: This document OWNS Notifications domain AI guidance, Elixir patterns, and Broadway configuration.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with the FN Notifications Service codebase.
 
 ## Essential Commands
@@ -106,19 +108,26 @@ lib/fn_notifications/
 - Value objects for immutable concepts
 
 ### Event Processing
-- External events come from Confluent Cloud Kafka via Broadway
+- External fat events come from Confluent Cloud Kafka via Broadway with complete context
 - Internal domain events use Phoenix.PubSub
-- `EventTranslator` converts external events to domain commands
+- `FatEventTranslator` converts fat external events to domain commands (NO API calls needed)
 - All event handlers are in `application/event_handlers/`
+- Contact exchange events processed with encrypted contact information
 
-### Contact Information Architecture
-**CRITICAL**: Contact info (email/phone) is stored in `user_preferences` table, NOT in notifications table. This follows DDD principles where contact information belongs to the user domain.
+### Contact Information Architecture with Events
+**UPDATED**: Contact info comes from fat events or secure contact exchange - NO database queries to other domains.
 
-**Correct Flow**:
-1. Notification created with `user_id`
-2. Delivery service loads `UserPreferences` with contact info
-3. Adapters receive both notification and user preferences
-4. Contact info retrieved from preferences during delivery
+**Events Flow**:
+1. Fat event contains privacy-safe user context with preferences (NO email/phone)
+2. Contact exchange creates encrypted contact tokens when needed
+3. Delivery service decrypts contact info only during actual delivery
+4. Contact info never stored permanently, only temporarily encrypted
+
+**Contact Exchange Flow**:
+1. `contact.exchange.requested` event creates notification to post owner
+2. `contact.exchange.approved` event contains encrypted contact info
+3. Service decrypts contact details for immediate delivery
+4. Contact info discarded after delivery (audit trail remains)
 
 ### Testing Approach
 - **E2E tests ONLY** in `test/e2e_test.exs` test complete event flows with repository initialization
@@ -135,9 +144,10 @@ lib/fn_notifications/
 ## Key Components
 
 **Event Processing**:
-- `PostsEventProcessor` - Handles post.created, post.matched, post.claimed, post.resolved events
-- `UsersEventProcessor` - Handles user.registered, organization.staff_added events
-- `EventTranslator` - Translates external Kafka events to domain commands
+- `PostsEventProcessor` - Handles fat post.created, post.matched, post.claimed, post.resolved events
+- `UsersEventProcessor` - Handles fat user.registered, organization.staff_added events
+- `ContactExchangeEventProcessor` - Handles contact.exchange.* events with encrypted contact info
+- `FatEventTranslator` - Translates fat external Kafka events to domain commands (replaces EventTranslator)
 
 **Delivery Channels**:
 - `EmailAdapter` - Swoosh-based email delivery (uses UserPreferences.email)
@@ -212,7 +222,7 @@ Use `NotificationService.send_notification/1` with `SendNotificationCommand` - n
 Always load user preferences when processing notifications. Contact information comes from preferences, not notification metadata.
 
 ### Event Translation
-External events must go through `EventTranslator` to convert to domain commands. This maintains the anti-corruption layer.
+External fat events go through `FatEventTranslator` to convert complete context to domain commands. This maintains the anti-corruption layer while eliminating API calls.
 
 ### Error Handling
 Use tagged tuples `{:ok, result}` and `{:error, reason}` consistently. Let processes crash for unexpected errors - OTP will handle supervision.

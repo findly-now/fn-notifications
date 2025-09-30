@@ -1,200 +1,560 @@
-name: Build and Deploy Notifications Service
+name: Deploy FN-Notifications
 
 on:
   push:
     branches:
-      - main          # Deploy to production
-      - develop       # Deploy to staging
-      - 'feature/*'   # Deploy to dev
+      - main
+      - develop
+    paths:
+      - 'fn-notifications/**'
+      - '.github/workflows/deploy.yml'
   pull_request:
     branches:
       - main
       - develop
+    paths:
+      - 'fn-notifications/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+      rollback:
+        description: 'Perform rollback to previous version'
+        required: false
+        type: boolean
+        default: false
 
 env:
-  PROJECT_ID: findly-production  # Change this to your GCP project
-  GAR_LOCATION: us-central1      # Change this to your Artifact Registry location
-  REPOSITORY: findly-services    # Change this to your Artifact Registry repository
-  SERVICE: fn-notifications
-  REGION: us-central1           # Change this to your Cloud Run region
+  SERVICE_NAME: fn-notifications
+  GCP_PROJECT_ID: findly-now-prod
+  GCP_REGION: us-central1
+  GKE_CLUSTER: findly-now-cluster
+  GCR_REGISTRY: gcr.io
+  ELIXIR_VERSION: 1.16.3
+  OTP_VERSION: 26.2.5
+  MIX_ENV: prod
 
 jobs:
   test:
+    name: Test
     runs-on: ubuntu-latest
-    name: Run Tests
-
     services:
       postgres:
-        image: postgres:15
+        image: postgres:16-alpine
         env:
-          POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
-          POSTGRES_DB: notifications_test
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fn_notifications_test
+        ports:
+          - 5432:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        ports:
-          - 5432:5432
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Elixir
-      uses: erlef/setup-beam@v1
-      with:
-        elixir-version: '1.15'
-        otp-version: '26'
+      - name: Setup Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
 
-    - name: Cache dependencies
-      uses: actions/cache@v3
-      with:
-        path: deps
-        key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-        restore-keys: ${{ runner.os }}-mix-
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        id: cache-deps
+        with:
+          path: |
+            deps
+            _build
+            priv/plts
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
 
-    - name: Cache build
-      uses: actions/cache@v3
-      with:
-        path: _build
-        key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
-        restore-keys: ${{ runner.os }}-build-
+      - name: Install dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        working-directory: ./fn-notifications
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix deps.get
+          mix deps.compile
 
-    - name: Install dependencies
-      run: mix deps.get
+      - name: Compile application
+        working-directory: ./fn-notifications
+        run: mix compile --warnings-as-errors
 
-    - name: Compile dependencies
-      run: mix deps.compile
+      - name: Check format
+        working-directory: ./fn-notifications
+        run: mix format --check-formatted
 
-    - name: Compile application
-      run: mix compile --warnings-as-errors
+      - name: Run Credo
+        working-directory: ./fn-notifications
+        run: mix credo --strict
 
-    - name: Check formatting
-      run: mix format --check-formatted
+      - name: Deploy test schema
+        working-directory: ./fn-notifications
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fn_notifications_test
+        run: psql "$DATABASE_URL" -f schema.sql
 
-    - name: Run Credo static analysis
-      run: mix credo --strict
+      - name: Run E2E tests
+        working-directory: ./fn-notifications
+        env:
+          MIX_ENV: test
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fn_notifications_test
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fn_notifications_test
+          KAFKA_BROKERS: localhost:9092
+          SECRET_KEY_BASE: test-secret-key-base-at-least-64-characters-long-for-testing-purposes-only
+        run: mix test
 
-    - name: Set up test database
-      env:
-        MIX_ENV: test
-        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/notifications_test
-      run: |
-        # Deploy schema to test database
-        psql "$DATABASE_URL" -f schema.sql
+      - name: Generate test coverage
+        if: github.event_name == 'pull_request'
+        working-directory: ./fn-notifications
+        env:
+          MIX_ENV: test
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fn_notifications_test
+        run: mix test --cover
 
-    - name: Run tests
-      env:
-        MIX_ENV: test
-        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/notifications_test
-        KAFKA_BROKERS: localhost:9092
-        TEST_MODE: true
-      run: mix test
-
-  build-and-deploy:
-    needs: test
+  build:
+    name: Build & Push Docker Image
     runs-on: ubuntu-latest
-    name: Build and Deploy
-
-    # Only run on push events (not PRs)
-    if: github.event_name == 'push'
+    needs: test
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set environment based on branch
-      id: set-env
-      run: |
-        if [[ ${{ github.ref }} == 'refs/heads/main' ]]; then
-          echo "environment=production" >> $GITHUB_OUTPUT
-          echo "k8s_namespace=findly" >> $GITHUB_OUTPUT
-        elif [[ ${{ github.ref }} == 'refs/heads/develop' ]]; then
-          echo "environment=staging" >> $GITHUB_OUTPUT
-          echo "k8s_namespace=findly" >> $GITHUB_OUTPUT
-        else
-          echo "environment=dev" >> $GITHUB_OUTPUT
-          echo "k8s_namespace=findly" >> $GITHUB_OUTPUT
-        fi
+      - name: Set environment
+        id: set-env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "DEPLOY_ENV=${{ github.event.inputs.environment }}" >> $GITHUB_ENV
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "DEPLOY_ENV=prod" >> $GITHUB_ENV
+          else
+            echo "DEPLOY_ENV=dev" >> $GITHUB_ENV
+          fi
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Google Auth with Workload Identity
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
 
-    - name: Authenticate to Google Cloud
-      id: auth
-      uses: google-github-actions/auth@v1
-      with:
-        credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - name: Setup Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
 
-    - name: Set up Cloud SDK
-      uses: google-github-actions/setup-gcloud@v1
+      - name: Configure Docker for GCR
+        run: |
+          gcloud auth configure-docker ${{ env.GCR_REGISTRY }}
 
-    - name: Configure Docker to use gcloud as a credential helper
-      run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev
+      - name: Generate image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.GCR_REGISTRY }}/${{ env.GCP_PROJECT_ID }}/${{ env.SERVICE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=${{ env.DEPLOY_ENV }}-latest
+            type=raw,value=${{ env.DEPLOY_ENV }}-{{date 'YYYYMMDD-HHmmss'}}
 
-    - name: Get GKE credentials
-      uses: google-github-actions/get-gke-credentials@v1
-      with:
-        cluster_name: ${{ secrets.GKE_CLUSTER }}
-        location: ${{ secrets.GKE_ZONE }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    - name: Generate image tag
-      id: image-tag
-      run: |
-        # Use git commit SHA and timestamp for unique tags
-        SHORT_SHA=$(git rev-parse --short HEAD)
-        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-        TAG="${{ steps.set-env.outputs.environment }}-${TIMESTAMP}-${SHORT_SHA}"
-        echo "tag=${TAG}" >> $GITHUB_OUTPUT
-        echo "image=${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE }}:${TAG}" >> $GITHUB_OUTPUT
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ./fn-notifications
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            MIX_ENV=${{ env.DEPLOY_ENV == 'prod' && 'prod' || 'staging' }}
+            WEB_BASE_URL=${{ env.DEPLOY_ENV == 'prod' && 'https://api.findly.now' || 'https://api-dev.findly.now' }}
 
-    - name: Build Docker image
-      run: |
-        docker build -t ${{ steps.image-tag.outputs.image }} \
-          --build-arg MIX_ENV=${{ steps.set-env.outputs.environment }} .
+      - name: Create image digest artifact
+        run: |
+          echo "${{ steps.build.outputs.digest }}" > image-digest.txt
+          echo "Image digest: ${{ steps.build.outputs.digest }}"
 
-    - name: Push Docker image
-      run: |
-        docker push ${{ steps.image-tag.outputs.image }}
+      - name: Upload digest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-digest
+          path: image-digest.txt
 
-    - name: Deploy to Kubernetes
-      run: |
-        # Clone fn-infra repository to get deployment scripts
-        git clone https://github.com/findly-now/fn-infra.git /tmp/fn-infra || true
+  migrate:
+    name: Run Database Migrations
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
 
-        # Update the image in the deployment
-        kubectl set image deployment/notifications notifications=${{ steps.image-tag.outputs.image }} -n ${{ steps.set-env.outputs.k8s_namespace }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-        # Wait for rollout to complete
-        kubectl rollout status deployment/notifications -n ${{ steps.set-env.outputs.k8s_namespace }} --timeout=300s
+      - name: Google Auth with Workload Identity
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
 
-    - name: Verify deployment
-      run: |
-        # Wait a bit for the deployment to be ready
-        sleep 15
+      - name: Setup Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
 
-        # Check if pods are running
-        kubectl get pods -l app=notifications -n ${{ steps.set-env.outputs.k8s_namespace }}
+      - name: Get database connection
+        id: db-connection
+        run: |
+          ENV_NAME=${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+          # Get Cloud SQL instance connection name
+          INSTANCE_NAME=$(gcloud sql instances list \
+            --filter="name:findly-now-${ENV_NAME}" \
+            --format="value(connectionName)")
+          echo "instance=$INSTANCE_NAME" >> $GITHUB_OUTPUT
 
-        # Check if service is responding
-        kubectl exec -n ${{ steps.set-env.outputs.k8s_namespace }} deployment/notifications -- wget --spider -q http://localhost:4000/api/health || echo "Health check endpoint not ready yet"
+      - name: Deploy schema with Cloud SQL Proxy
+        run: |
+          # Download Cloud SQL Proxy
+          wget https://dl.google.com/cloudsql/cloud_sql_proxy.linux.amd64 -O cloud_sql_proxy
+          chmod +x cloud_sql_proxy
 
-    - name: Notify deployment status
-      if: always()
-      run: |
-        if [ ${{ job.status }} == 'success' ]; then
-          echo "✅ Notifications service deployed successfully to ${{ steps.set-env.outputs.environment }}"
-          echo "Image: ${{ steps.image-tag.outputs.image }}"
-        else
-          echo "❌ Notifications service deployment failed"
-          kubectl get events -n ${{ steps.set-env.outputs.k8s_namespace }} --sort-by='.lastTimestamp' | tail -10
-        fi
+          # Start proxy in background
+          ./cloud_sql_proxy -instances=${{ steps.db-connection.outputs.instance }}=tcp:5432 &
+          PROXY_PID=$!
 
-    - name: Rollback on failure
-      if: failure()
-      run: |
-        echo "🔄 Rolling back notifications deployment"
-        kubectl rollout undo deployment/notifications -n ${{ steps.set-env.outputs.k8s_namespace }}
-        kubectl rollout status deployment/notifications -n ${{ steps.set-env.outputs.k8s_namespace }} --timeout=180s
+          # Wait for proxy to be ready
+          sleep 5
+
+          # Run schema deployment
+          DATABASE_URL="postgresql://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@localhost:5432/${{ secrets.DB_NAME }}"
+          psql "$DATABASE_URL" -f ./fn-notifications/schema.sql
+
+          # Clean up proxy
+          kill $PROXY_PID
+
+  deploy:
+    name: Deploy to GKE
+    runs-on: ubuntu-latest
+    needs: [build, migrate]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch'
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+      url: ${{ github.ref == 'refs/heads/main' && 'https://api.findly.now' || 'https://api-dev.findly.now' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set deployment environment
+        id: deploy-env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "ENV_NAME=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+            echo "ROLLBACK=${{ github.event.inputs.rollback }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "ENV_NAME=prod" >> $GITHUB_OUTPUT
+            echo "ROLLBACK=false" >> $GITHUB_OUTPUT
+          else
+            echo "ENV_NAME=dev" >> $GITHUB_OUTPUT
+            echo "ROLLBACK=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Google Auth with Workload Identity
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Setup Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Get GKE credentials
+        run: |
+          gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
+            --region ${{ env.GCP_REGION }} \
+            --project ${{ env.GCP_PROJECT_ID }}
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: '3.13.0'
+
+      - name: Download image digest
+        uses: actions/download-artifact@v4
+        with:
+          name: image-digest
+
+      - name: Prepare Broadway/Kafka configuration
+        run: |
+          ENV_NAME=${{ steps.deploy-env.outputs.ENV_NAME }}
+
+          # Broadway-specific configuration for Elixir service
+          cat > broadway-config.yaml <<EOF
+          broadway:
+            producers:
+              default:
+                module: BroadwayKafka.Producer
+                concurrency: 10
+                config:
+                  hosts: \$KAFKA_BROKERS
+                  group_id: fn-notifications-${ENV_NAME}
+                  topics:
+                    - posts.created
+                    - posts.matched
+                    - posts.claimed
+                    - posts.resolved
+                    - users.registered
+                    - contact.exchange.requested
+                    - contact.exchange.approved
+            processors:
+              default:
+                concurrency: 20
+                max_demand: 10
+            batchers:
+              default:
+                concurrency: 5
+                batch_size: 100
+                batch_timeout: 1000
+          EOF
+
+      - name: Prepare Helm values
+        run: |
+          IMAGE_DIGEST=$(cat image-digest.txt)
+          ENV_NAME=${{ steps.deploy-env.outputs.ENV_NAME }}
+
+          cat > deploy-values.yaml <<EOF
+          image:
+            repository: ${{ env.GCR_REGISTRY }}/${{ env.GCP_PROJECT_ID }}/${{ env.SERVICE_NAME }}
+            tag: "@${IMAGE_DIGEST}"
+            pullPolicy: Always
+
+          replicaCount: ${{ env.ENV_NAME == 'prod' && '3' || '2' }}
+
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+
+          autoscaling:
+            enabled: true
+            minReplicas: ${{ env.ENV_NAME == 'prod' && '3' || '2' }}
+            maxReplicas: ${{ env.ENV_NAME == 'prod' && '10' || '5' }}
+            targetCPUUtilizationPercentage: 70
+            targetMemoryUtilizationPercentage: 80
+
+          env:
+            - name: MIX_ENV
+              value: "${{ env.ENV_NAME == 'prod' && 'prod' || 'staging' }}"
+            - name: PHX_HOST
+              value: "${{ env.ENV_NAME == 'prod' && 'api.findly.now' || 'api-dev.findly.now' }}"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: fn-notifications-secrets
+                  key: database-url
+            - name: KAFKA_BROKERS
+              valueFrom:
+                secretKeyRef:
+                  name: fn-notifications-secrets
+                  key: kafka-brokers
+            - name: KAFKA_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: fn-notifications-secrets
+                  key: kafka-username
+            - name: KAFKA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fn-notifications-secrets
+                  key: kafka-password
+            - name: SECRET_KEY_BASE
+              valueFrom:
+                secretKeyRef:
+                  name: fn-notifications-secrets
+                  key: secret-key-base
+            - name: TWILIO_ACCOUNT_SID
+              valueFrom:
+                secretKeyRef:
+                  name: fn-notifications-secrets
+                  key: twilio-account-sid
+            - name: TWILIO_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: fn-notifications-secrets
+                  key: twilio-auth-token
+            - name: SMTP_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: fn-notifications-secrets
+                  key: smtp-username
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fn-notifications-secrets
+                  key: smtp-password
+            - name: GCS_BUCKET
+              value: "findly-now-${ENV_NAME}-notifications"
+            - name: BROADWAY_CONFIG
+              value: "/config/broadway.yaml"
+
+          configMaps:
+            - name: broadway-config
+              data:
+                broadway.yaml: |
+                  $(cat broadway-config.yaml | sed 's/^/      /')
+          EOF
+
+      - name: Perform rollback
+        if: steps.deploy-env.outputs.ROLLBACK == 'true'
+        run: |
+          echo "Performing rollback..."
+          helm rollback ${{ env.SERVICE_NAME }} \
+            -n ${{ steps.deploy-env.outputs.ENV_NAME }} \
+            --wait \
+            --timeout 5m
+
+      - name: Deploy with Helm
+        if: steps.deploy-env.outputs.ROLLBACK != 'true'
+        run: |
+          ENV_NAME=${{ steps.deploy-env.outputs.ENV_NAME }}
+
+          # Create namespace if it doesn't exist
+          kubectl create namespace ${ENV_NAME} --dry-run=client -o yaml | kubectl apply -f -
+
+          # Deploy or upgrade
+          helm upgrade --install ${{ env.SERVICE_NAME }} \
+            ./fn-infra/helm/${{ env.SERVICE_NAME }} \
+            -f ./fn-infra/helm/${{ env.SERVICE_NAME }}/values.yaml \
+            -f ./fn-infra/helm/${{ env.SERVICE_NAME }}/values-${ENV_NAME}.yaml \
+            -f deploy-values.yaml \
+            --namespace ${ENV_NAME} \
+            --create-namespace \
+            --wait \
+            --timeout 10m \
+            --history-max 10 \
+            --atomic
+
+      - name: Verify deployment
+        run: |
+          ENV_NAME=${{ steps.deploy-env.outputs.ENV_NAME }}
+
+          # Wait for deployment to be ready
+          kubectl rollout status deployment/${{ env.SERVICE_NAME }} -n ${ENV_NAME} --timeout=5m
+
+          # Check pod status
+          kubectl get pods -n ${ENV_NAME} -l app=${{ env.SERVICE_NAME }}
+
+          # Check service endpoints
+          kubectl get endpoints -n ${ENV_NAME} -l app=${{ env.SERVICE_NAME }}
+
+          # Check Broadway consumers are connected
+          POD_NAME=$(kubectl get pods -n ${ENV_NAME} -l app=${{ env.SERVICE_NAME }} -o jsonpath="{.items[0].metadata.name}")
+          echo "Checking Broadway status on pod: $POD_NAME"
+          kubectl exec -n ${ENV_NAME} $POD_NAME -- sh -c "echo 'Broadway.all_running?' | mix run -e -" || true
+
+      - name: Run smoke tests
+        if: steps.deploy-env.outputs.ROLLBACK != 'true'
+        run: |
+          ENV_NAME=${{ steps.deploy-env.outputs.ENV_NAME }}
+
+          # Get service URL
+          if [ "${ENV_NAME}" == "prod" ]; then
+            SERVICE_URL="https://api.findly.now"
+          else
+            SERVICE_URL="https://api-dev.findly.now"
+          fi
+
+          # Health check
+          echo "Testing health endpoint..."
+          curl -f ${SERVICE_URL}/api/health || exit 1
+
+          # Ready check (includes Broadway status)
+          echo "Testing readiness endpoint..."
+          curl -f ${SERVICE_URL}/api/ready || exit 1
+
+          # Verify Broadway consumers
+          echo "Verifying Broadway Kafka consumers..."
+          POD_NAME=$(kubectl get pods -n ${ENV_NAME} -l app=${{ env.SERVICE_NAME }} -o jsonpath="{.items[0].metadata.name}")
+          kubectl logs -n ${ENV_NAME} $POD_NAME --tail=50 | grep -i "broadway" || true
+
+  notify:
+    name: Notify Deployment Status
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: always()
+
+    steps:
+      - name: Send notification
+        uses: 8398a7/action-slack@v3
+        if: always()
+        with:
+          status: ${{ job.status }}
+          text: |
+            Deployment Status: ${{ job.status }}
+            Service: fn-notifications (Elixir/Phoenix/Broadway)
+            Environment: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            Broadway Status: ${{ job.status == 'success' && 'Consumers Active' || 'Check Required' }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+  cleanup:
+    name: Cleanup Old Images
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: success()
+
+    steps:
+      - name: Google Auth with Workload Identity
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Setup Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Clean up old images
+        run: |
+          # Keep only last 10 images per environment
+          ENV_NAME=${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
+
+          gcloud container images list-tags \
+            ${{ env.GCR_REGISTRY }}/${{ env.GCP_PROJECT_ID }}/${{ env.SERVICE_NAME }} \
+            --filter="tags:${ENV_NAME}-*" \
+            --format="get(digest)" \
+            --sort-by="~timestamp" | \
+            tail -n +11 | \
+            xargs -I {} gcloud container images delete \
+              "${{ env.GCR_REGISTRY }}/${{ env.GCP_PROJECT_ID }}/${{ env.SERVICE_NAME }}@{}" \
+              --quiet --force-delete-tags || true

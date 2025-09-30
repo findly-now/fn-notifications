@@ -93,6 +93,10 @@ config :fn_notifications,
     raise("WEB_BASE_URL environment variable is required"),
   sender_email: System.get_env("SENDER_EMAIL", "notifications@fnnotifications.local"),
 
+  # Contact Exchange Security Configuration
+  contact_encryption_key: System.get_env("CONTACT_ENCRYPTION_KEY"),
+  contact_retention_days: String.to_integer(System.get_env("CONTACT_RETENTION_DAYS", "30")),
+
   # Feature Flags - defaults to safe test mode unless explicitly disabled
   test_mode: System.get_env("TEST_MODE", "true") == "true",
   log_twilio_requests: System.get_env("LOG_TWILIO_REQUESTS", "false") == "true"

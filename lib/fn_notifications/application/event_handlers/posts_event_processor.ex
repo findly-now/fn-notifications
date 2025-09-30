@@ -6,7 +6,7 @@ defmodule FnNotifications.Application.EventHandlers.PostsEventProcessor do
   use Broadway
 
   alias FnNotifications.Application.Services.NotificationService
-  alias FnNotifications.Application.AntiCorruption.EventTranslator
+  alias FnNotifications.Application.AntiCorruption.FatEventTranslator
 
   # For generating correlation IDs
   alias UUID
@@ -27,7 +27,7 @@ defmodule FnNotifications.Application.EventHandlers.PostsEventProcessor do
           topics: [kafka_topic(:posts_events)],
           offset_reset_policy: :earliest,
           begin_offset: :reset,
-          config: kafka_config()
+          client_config: kafka_config()
         }
       ],
       processors: [
@@ -52,7 +52,7 @@ defmodule FnNotifications.Application.EventHandlers.PostsEventProcessor do
 
     case decode_message(message) do
       {:ok, event} ->
-        case EventTranslator.translate_post_event(event) do
+        case FatEventTranslator.translate_post_event(event) do
           {:ok, notification_commands} ->
             %{message | data: notification_commands}
 
@@ -128,7 +128,15 @@ defmodule FnNotifications.Application.EventHandlers.PostsEventProcessor do
 
   defp kafka_topic(topic_key) do
     topics = Application.get_env(:fn_notifications, :kafka_topics, %{})
-    Map.get(topics, topic_key, "posts.events")
+    # Handle both map and keyword list formats
+    case topics do
+      topics when is_map(topics) ->
+        Map.get(topics, topic_key, "posts.events")
+      topics when is_list(topics) ->
+        Keyword.get(topics, topic_key, "posts.events")
+      _ ->
+        "posts.events"
+    end
   end
 
   defp extract_correlation_id(metadata) do

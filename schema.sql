@@ -61,6 +61,26 @@ CREATE TABLE IF NOT EXISTS user_preferences (
     CONSTRAINT user_preferences_pkey PRIMARY KEY (id)
 );
 
+-- Contact exchange notifications table - Secure contact sharing workflow tracking
+-- Tracks contact exchange requests, approvals, denials, and expirations
+CREATE TABLE IF NOT EXISTS contact_exchange_notifications (
+    id character varying NOT NULL,                                    -- Unique notification identifier
+    request_id character varying NOT NULL,                          -- Contact exchange request ID from event
+    requester_user_id character varying NOT NULL,                   -- User requesting contact info
+    owner_user_id character varying NOT NULL,                       -- User who owns the post/contact info
+    related_post_id character varying NOT NULL,                     -- Post ID related to exchange
+    exchange_status character varying NOT NULL,                     -- pending, approved, denied, expired
+    notification_type character varying NOT NULL,                   -- request_received, approval_granted, denial_sent, expiration_notice
+    contact_info jsonb DEFAULT '{}'::jsonb,                        -- Encrypted contact info (only for approved exchanges)
+    expires_at timestamp without time zone,                        -- When contact access expires
+    metadata jsonb DEFAULT '{}'::jsonb,                            -- Additional context (post_title, verification_details, etc.)
+    notification_sent boolean DEFAULT false NOT NULL,               -- Whether notification was sent
+    sent_at timestamp without time zone,                           -- When notification was sent
+    inserted_at timestamp without time zone NOT NULL,              -- Record creation timestamp
+    updated_at timestamp without time zone NOT NULL,               -- Last modification timestamp
+    CONSTRAINT contact_exchange_notifications_pkey PRIMARY KEY (id)
+);
+
 -- =============================================================================
 -- PERFORMANCE INDEXES
 -- =============================================================================
@@ -91,6 +111,25 @@ CREATE INDEX IF NOT EXISTS notifications_deduplication_idx ON notifications USIN
 -- User preferences - only the essential unique constraint
 CREATE UNIQUE INDEX IF NOT EXISTS user_preferences_user_id_index ON user_preferences USING btree (user_id);
     -- ^ Ensures one preference record per user + optimizes lookups
+
+-- Contact exchange notifications indexes
+CREATE INDEX IF NOT EXISTS contact_exchange_notifications_request_id_index ON contact_exchange_notifications USING btree (request_id);
+    -- ^ Supports lookup by exchange request ID
+
+CREATE INDEX IF NOT EXISTS contact_exchange_notifications_requester_index ON contact_exchange_notifications USING btree (requester_user_id);
+    -- ^ Supports lookup by requester user ID
+
+CREATE INDEX IF NOT EXISTS contact_exchange_notifications_owner_index ON contact_exchange_notifications USING btree (owner_user_id);
+    -- ^ Supports lookup by owner user ID
+
+CREATE INDEX IF NOT EXISTS contact_exchange_notifications_post_index ON contact_exchange_notifications USING btree (related_post_id);
+    -- ^ Supports lookup by related post ID
+
+CREATE INDEX IF NOT EXISTS contact_exchange_notifications_status_type_index ON contact_exchange_notifications USING btree (exchange_status, notification_type);
+    -- ^ Supports status and type filtering
+
+CREATE INDEX IF NOT EXISTS contact_exchange_notifications_expires_at_index ON contact_exchange_notifications USING btree (expires_at) WHERE expires_at IS NOT NULL;
+    -- ^ Supports finding expired exchanges for cleanup
 
 -- =============================================================================
 -- DATA CONSTRAINTS
@@ -141,6 +180,29 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'user_preferences_timezone_check') THEN
     ALTER TABLE user_preferences ADD CONSTRAINT user_preferences_timezone_check
     CHECK ((length((timezone)::text) > 0));
+  END IF;
+END
+$$;
+
+-- Contact exchange notifications table constraints
+DO $$
+BEGIN
+  -- Validate exchange status - ensure status follows the defined workflow
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'contact_exchange_notifications_status_check') THEN
+    ALTER TABLE contact_exchange_notifications ADD CONSTRAINT contact_exchange_notifications_status_check
+    CHECK (((exchange_status)::text = ANY (ARRAY[('pending'::character varying)::text, ('approved'::character varying)::text, ('denied'::character varying)::text, ('expired'::character varying)::text])));
+  END IF;
+
+  -- Validate notification type - ensure notification type is valid
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'contact_exchange_notifications_type_check') THEN
+    ALTER TABLE contact_exchange_notifications ADD CONSTRAINT contact_exchange_notifications_type_check
+    CHECK (((notification_type)::text = ANY (ARRAY[('request_received'::character varying)::text, ('approval_granted'::character varying)::text, ('denial_sent'::character varying)::text, ('expiration_notice'::character varying)::text])));
+  END IF;
+
+  -- Ensure requester and owner are different users
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'contact_exchange_notifications_different_users_check') THEN
+    ALTER TABLE contact_exchange_notifications ADD CONSTRAINT contact_exchange_notifications_different_users_check
+    CHECK (requester_user_id != owner_user_id);
   END IF;
 END
 $$;
